@@ -1,0 +1,2 @@
+// Windows picks the lowest ID as the exe's icon; `main.zig` loads it for the window too.
+1 ICON "ztest.ico"
