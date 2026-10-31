@@ -60,6 +60,58 @@ test "manual sends recover after the server closes an idle connection" {
     try testing.expectEqual(2, server.connections);
 }
 
+test "desktop JSON draft snapshots headers and body and supplies its content type" {
+    var server = try Server.listen(&.{"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"});
+    defer server.listener.deinit(testing.io);
+    var task = try testing.io.concurrent(Server.serve, .{&server});
+    defer task.cancel(testing.io) catch {};
+    var session = api.Session.init(testing.allocator, testing.io);
+    defer session.deinit();
+    var url_buffer: [128]u8 = undefined;
+    const url = try std.fmt.bufPrint(&url_buffer, "http://127.0.0.1:{d}/json", .{server.port()});
+    var headers = "X-Trace: original\r\nX-Trace: second".*;
+    var body = "{\"value\":42}".*;
+    try session.startDraft(.{ .method = .POST, .url = url, .headers = &headers, .body_kind = .json, .body = &body }, 2000);
+    @memset(&headers, 'x');
+    @memset(&body, 'x');
+    try finish(&session);
+    try testing.expectEqual(api.Phase.completed, session.phase);
+    const received = server.received[0..server.received_len];
+    try testing.expect(std.mem.find(u8, received, "X-Trace: original\r\nX-Trace: second\r\n") != null);
+    try testing.expect(std.mem.find(u8, received, "content-type: application/json\r\n") != null);
+    try testing.expect(std.mem.endsWith(u8, received, "{\"value\":42}"));
+}
+
+test "desktop raw draft preserves text and an explicit content type" {
+    var server = try Server.listen(&.{"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"});
+    defer server.listener.deinit(testing.io);
+    var task = try testing.io.concurrent(Server.serve, .{&server});
+    defer task.cancel(testing.io) catch {};
+    var session = api.Session.init(testing.allocator, testing.io);
+    defer session.deinit();
+    var buffer: [128]u8 = undefined;
+    const url = try std.fmt.bufPrint(&buffer, "http://127.0.0.1:{d}/raw", .{server.port()});
+    try session.startDraft(.{ .method = .PUT, .url = url, .headers = "Content-Type: text/plain", .body_kind = .raw, .body = "first\r\nsecond\r\n" }, 2000);
+    try finish(&session);
+    try testing.expectEqual(api.Phase.completed, session.phase);
+    const received = server.received[0..server.received_len];
+    try testing.expect(std.mem.find(u8, received, "content-type: text/plain\r\n") != null);
+    try testing.expect(std.mem.endsWith(u8, received, "first\r\nsecond\r\n"));
+}
+
+test "invalid drafts do not start a worker or leak sensitive values in errors" {
+    var session = api.Session.init(testing.allocator, testing.io);
+    defer session.deinit();
+    try testing.expectError(error.InvalidJson, session.startDraft(.{ .url = "http://127.0.0.1:1/", .body_kind = .json, .body = "secret-invalid-json" }, 2000));
+    try testing.expect(!session.busy());
+    try testing.expectEqual(api.Phase.failed, session.phase);
+    try testing.expect(std.mem.find(u8, session.message(), "secret") == null);
+    try testing.expectError(error.InvalidHeader, session.startDraft(.{ .url = "http://127.0.0.1:1/", .headers = "X-Good: yes\r\nBad Name: secret-token" }, 2000));
+    try testing.expect(!session.busy());
+    try testing.expect(std.mem.startsWith(u8, session.message(), "Header line 2:"));
+    try testing.expect(std.mem.find(u8, session.message(), "secret") == null);
+}
+
 test "desktop request can cancel a silent server and then send again" {
     var server = try Server.listen(&.{""});
     defer server.listener.deinit(testing.io);

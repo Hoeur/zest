@@ -80,6 +80,8 @@ pub const ES_AUTOHSCROLL = 0x0080;
 pub const ES_MULTILINE = 0x0004;
 pub const ES_AUTOVSCROLL = 0x0040;
 pub const ES_READONLY = 0x0800;
+pub const ES_WANTRETURN = 0x1000;
+pub const CBN_SELCHANGE = 1;
 pub const CBS_DROPDOWNLIST = 0x0003;
 pub const SW_HIDE = 0;
 

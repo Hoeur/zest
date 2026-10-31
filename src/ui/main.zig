@@ -85,6 +85,10 @@ fn paint(hwnd: win.Handle) void {
 fn windowProc(hwnd: win.Handle, msg: u32, wparam: usize, lparam: isize) callconv(.winapi) isize {
     switch (msg) {
         win.WM_COMMAND => {
+            if (controls_ready and wparam & 0xFFFF == @import("api_controls.zig").body_kind_id and wparam >> 16 == win.CBN_SELCHANGE) {
+                controls.refresh(&api, if (state.response_tab == 0) .body else .headers);
+                _ = win.InvalidateRect(hwnd, null, 0);
+            }
             if (controls_ready and wparam & 0xFFFF == @import("api_controls.zig").send_id and
                 wparam >> 16 == 0 and @as(win.Handle, @ptrFromInt(@as(usize, @bitCast(lparam)))) == controls.send)
             {
@@ -226,12 +230,14 @@ pub fn main(init: std.process.Init) !void {
             // Standard Win32 EDIT controls do not implement Ctrl+A themselves.
             const focus = win.GetFocus();
             if (msg.message == win.WM_KEYDOWN and msg.wParam == 'A' and win.GetKeyState(win.VK_CONTROL) < 0 and
-                (focus == controls.url or focus == controls.response))
+                controls.isEditor(focus))
             {
                 _ = win.SendMessageW(focus, win.EM_SETSEL, 0, -1);
                 continue;
             }
-            if (msg.message == win.WM_KEYDOWN and msg.wParam == win.VK_RETURN and win.GetFocus() == controls.url) {
+            if (msg.message == win.WM_KEYDOWN and msg.wParam == win.VK_RETURN and
+                (focus == controls.url or (win.GetKeyState(win.VK_CONTROL) < 0 and controls.isEditor(focus))))
+            {
                 sendOrCancel(hwnd);
                 continue;
             }

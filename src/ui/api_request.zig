@@ -5,6 +5,7 @@ const Io = std.Io;
 const http = @import("../core/http/client.zig");
 const model = @import("../core/http/request.zig");
 const Response = @import("../core/http/response.zig").Response;
+pub const draft = @import("../core/http/draft.zig");
 
 pub const methods = [_]model.Method{ .GET, .POST, .PUT, .PATCH, .DELETE, .HEAD, .OPTIONS };
 pub const Phase = enum { idle, running, canceling, completed, failed, canceled };
@@ -19,6 +20,7 @@ pub const Session = struct {
     // Only the worker writes these while pending. poll acquires done before reading.
     response: ?Response = null,
     failure: ?http.Error = null,
+    input_message: ?[]const u8 = null,
     arena: ?std.heap.ArenaAllocator = null,
     request: model.Request = .{ .url = "" },
     future: ?Io.Future(void) = null,
@@ -44,6 +46,11 @@ pub const Session = struct {
     /// Snapshots the draft: input edits cannot race with the worker. Keep this
     /// Session at a stable address until deinit, and call start/poll on one thread.
     pub fn start(s: *Session, method: model.Method, url: []const u8, timeout_ms: u64) !void {
+        return s.startDraft(.{ .method = method, .url = url }, timeout_ms);
+    }
+
+    /// Validates and owns all editor text before a worker can send anything.
+    pub fn startDraft(s: *Session, source: draft.Draft, timeout_ms: u64) !void {
         if (s.busy()) return error.Busy;
         // Manual requests may be minutes apart. Start a new pool rather than
         // reusing an idle socket the server has closed, or retrying a POST.
@@ -51,19 +58,28 @@ pub const Session = struct {
         s.client = .init(s.gpa, s.io);
         s.response = null;
         s.failure = null;
+        s.input_message = null;
         s.phase = .idle;
         if (s.arena) |*arena| arena.deinit();
         s.arena = .init(s.gpa);
         errdefer s.phase = .failed;
-        s.request = .{
-            .method = method,
-            .url = try s.arena.?.allocator().dupe(u8, std.mem.trim(u8, url, " \r\n\t")),
-            .timeout_ms = timeout_ms,
-            .max_response_size = 4 * 1024 * 1024,
+        const allocator = s.arena.?.allocator();
+        var diagnostic: draft.Diagnostic = .{};
+        s.request = draft.prepare(allocator, source, &diagnostic) catch |err| {
+            s.input_message = if (diagnostic.line > 0)
+                std.fmt.allocPrint(allocator, "Header line {d}: {s}", .{ diagnostic.line, draft.describe(err) }) catch draft.describe(err)
+            else
+                draft.describe(err);
+            return err;
         };
+        s.request.timeout_ms = timeout_ms;
+        s.request.max_response_size = 4 * 1024 * 1024;
         s.done.store(false, .release);
         s.canceled.store(false, .release);
-        s.future = try s.io.concurrent(work, .{s});
+        s.future = s.io.concurrent(work, .{s}) catch |err| {
+            s.failure = if (err == error.OutOfMemory) error.OutOfMemory else error.RequestFailed;
+            return err;
+        };
         s.phase = .running;
     }
 
@@ -103,7 +119,7 @@ pub const Session = struct {
             .canceling => "Canceling request...",
             .completed => "Response received",
             .canceled => "Request canceled",
-            .failed => if (s.failure) |err| http.describe(err) else "Could not start the request",
+            .failed => s.input_message orelse if (s.failure) |err| http.describe(err) else "Could not start the request",
         };
     }
 

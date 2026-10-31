@@ -160,6 +160,15 @@ test "POST sends the JSON body and its content type" {
     try testing.expect(std.mem.endsWith(u8, text, "{\"a\":1}"));
 }
 
+test "an explicit content type is sent even without a body" {
+    var f = try startServer(&.{"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"});
+    try f.start();
+    defer f.stop();
+    var buffer: [64]u8 = undefined;
+    _ = try f.send(.{ .url = try f.server.url(&buffer, "/"), .headers = &.{.{ .name = "Content-Type", .value = "application/custom" }} });
+    try testing.expect(std.mem.find(u8, f.server.received_text(), "content-type: application/custom\r\n") != null);
+}
+
 test "every method reaches the server" {
     const methods = [_]std.http.Method{ .PUT, .PATCH, .DELETE, .HEAD, .OPTIONS };
     for (methods) |method| {

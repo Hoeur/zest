@@ -119,6 +119,8 @@ const Hop = struct {
     body: encoding.EncodedBody,
     /// False once a redirect has left the origin the caller named.
     credentials: bool = true,
+    /// An explicitly supplied content type is retained until a redirect drops it.
+    keep_content_type: bool = true,
 };
 
 fn perform(c: *Client, arena: Allocator, request: Request) Error!Response {
@@ -132,7 +134,7 @@ fn perform(c: *Client, arena: Allocator, request: Request) Error!Response {
     const start: Io.Timestamp = .now(io, .awake);
 
     while (true) {
-        const options = try buildOptions(arena, request, hop.body, hop.credentials);
+        const options = try buildOptions(arena, request, hop.body, hop.credentials, hop.keep_content_type);
         var http_request = c.inner.request(hop.method, hop.uri, options) catch |err| return mapError(err);
         defer http_request.deinit();
 
@@ -194,7 +196,10 @@ fn nextHop(arena: Allocator, hop: Hop, head: http.Client.Response.Head) Error!?H
         .temporary_redirect, .permanent_redirect => {},
         else => return null,
     }
-    if (next.method != hop.method) next.body = .{};
+    if (next.method != hop.method) {
+        next.body = .{};
+        next.keep_content_type = false;
+    }
 
     // The resolved URI points into this buffer, so it needs room for a merged path.
     const buffer = try arena.alloc(u8, location.len + hop.uri.path.percent_encoded.len + 2);
@@ -241,6 +246,7 @@ fn buildOptions(
     request: Request,
     body: encoding.EncodedBody,
     credentials: bool,
+    keep_content_type: bool,
 ) Error!http.Client.RequestOptions {
     var options: http.Client.RequestOptions = .{ .redirect_behavior = .unhandled };
     // Compressed replies are still decoded, for a user who sends this header.
@@ -284,7 +290,7 @@ fn buildOptions(
             options.headers.accept_encoding = override;
         } else if (eql(header.name, "content-type")) {
             // A body dropped by a redirect takes its content type with it.
-            if (body.data != null) options.headers.content_type = override;
+            if (keep_content_type) options.headers.content_type = override;
         } else if (eql(header.name, "host")) {
             if (credentials) options.headers.host = override;
         } else if (eql(header.name, "authorization")) {

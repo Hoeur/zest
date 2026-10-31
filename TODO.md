@@ -323,7 +323,8 @@ Authorization: Bearer {{token}}
 The Windows Win32/GDI+ shell already provides a window, render loop, mouse
 navigation, DPI handling, dark styling, and routed screens. The checklist below
 still includes the original cross-platform/zgui plan; sample screens do not
-imply functional editors. API Tests now sends real method-and-URL requests.
+imply functional editors. API Tests now sends real requests with editable headers
+and None/Raw/JSON bodies.
 
 ### Integration
 
@@ -381,8 +382,8 @@ imply functional editors. API Tests now sends real method-and-URL requests.
 
 ### Headers
 
-- [ ] key
-- [ ] value
+- [x] key (one `Name: value` per line)
+- [x] value
 - [ ] enable/disable
 - [ ] secret mask
 
@@ -395,9 +396,9 @@ imply functional editors. API Tests now sends real method-and-URL requests.
 
 ### Body
 
-- [ ] None
-- [ ] JSON
-- [ ] Raw
+- [x] None
+- [x] JSON
+- [x] Raw
 - [ ] form-urlencoded
 - [ ] multipart
 
@@ -413,7 +414,8 @@ imply functional editors. API Tests now sends real method-and-URL requests.
 
 ### Next Desktop Slice
 
-- [ ] Editable request headers and raw/JSON body
+- [x] Editable request headers and raw/JSON body
+- [x] Validate JSON and header lines before sending; retain body drafts across modes
 - [ ] Connect auth and environment variables to the core models
 - [ ] Evaluate assertions against the live response
 - [ ] Save and reopen `.ztest` requests

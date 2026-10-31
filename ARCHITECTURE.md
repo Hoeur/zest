@@ -129,11 +129,12 @@ own listener. Run semantics are in `docs/TEST_FORMAT.md`.
 
 ## Desktop API requests
 
-The Windows API Tests page sends method-and-URL requests through the same HTTP
-engine as the CLI. `ui/api_controls.zig` owns native controls for editing,
+The Windows API Tests page sends requests through the same HTTP engine as the
+CLI, with editable method, URL, headers, and None/Raw/JSON body modes.
+`ui/api_controls.zig` owns native controls for editing,
 clipboard, keyboard focus, and scrolling; `ui/screens/api_test.zig` owns their
 shared layout and paints response metadata. It shows actual responses rather
-than the dashboard's sample data. Request body/header/auth editors, saved tests,
+than the dashboard's sample data. Auth controls, saved tests,
 assertions, and environment selection remain future UI work.
 
 `ui/api_request.zig` snapshots each request into an arena and runs it on an
@@ -144,6 +145,17 @@ Closing the application cancels and joins pending work before freeing memory.
 Each manual Send starts a fresh connection pool to avoid expired idle sockets.
 Requests use a 30-second timeout and a 4 MiB response limit; text previews show
 up to 64 KiB of source text, mark truncation, and handle invalid UTF-8 safely.
+
+`core/http/draft.zig` validates text headers and JSON before execution, then
+copies all request data into the request arena. Duplicate headers and colons
+inside values are preserved. Content-Length and Transfer-Encoding are managed
+by the HTTP client. Header errors include line numbers without printing values.
+Drafts are limited to 32 KiB of headers and 256 KiB of body text; native editors
+also limit input to 8,192 and 65,536 UTF-16 code units respectively. None mode
+retains the body draft without sending it. JSON mode supplies application/json
+unless an explicit Content-Type overrides it. Explicit Content-Type headers
+also work without a body and are dropped when a redirect changes the method.
+Plain Enter inserts a newline in multiline editors; Ctrl+Enter sends.
 
 ## Planned structure
 
