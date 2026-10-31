@@ -5,4 +5,6 @@ pub const ExitCode = enum(u8) {
     test_failure = 1,
     config_error = 2,
     internal_error = 3,
+    /// The shell convention for a process stopped by Ctrl-C.
+    interrupted = 130,
 };

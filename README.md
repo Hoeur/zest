@@ -24,12 +24,12 @@
 ## 📍 Current State
 
 > **Most of this README describes the planned ZTest product, not what runs today.**
-> The API, assertion, suite, load, report, and CI sections below are design targets. There is no `ztest` CLI, HTTP engine, `.ztest` parser, or load engine yet.
+> `ztest api` sends one HTTP or HTTPS request, prints the response, and can check it with `--assert`. `ztest run` runs `.ztest` files or directories, with environments and masked secrets from `ztest.json`. The load, report, and CI sections below are design targets.
 
 What exists today:
 
 - **`zest`**: a small unit-test library for Zig, in `src/root.zig`.
-- **Desktop shell** (Windows only): `zig build ui` opens a dashboard showing sample data. Other screens are placeholders.
+- **Desktop app** (Windows only): `zig build ui` opens the sample dashboard. **API Tests** sends real requests with an editable HTTP method and URL, Send/Cancel, status, duration, body size, and selectable Body/Headers views. Headers, request bodies, authentication, environments, assertions, and saving are not yet editable in the UI. Other screens still use sample data or placeholders.
 
 Using `zest`:
 
@@ -520,17 +520,27 @@ Size       1.2 KB
 
 ## ✅ Assertions
 
-Example:
+Check a response from the command line. Each failure is reported, and the command exits `1`:
+
+```bash
+ztest api GET https://api.example.com/users \
+  --assert 'status == 200' \
+  --assert 'response_time < 500ms' \
+  --assert 'body.items[0].name == "Apple"' \
+  --assert 'body.token exists' \
+  --assert 'header.content-type contains "application/json"'
+```
+
+With `--raw`, the report goes to stderr so stdout stays pipeable.
+
+The `.ztest` format uses the same expressions:
 
 ```text
 expect status == 200
-expect response_time < 500ms
-expect body.success == true
 expect body.token exists
-expect header.content-type contains "application/json"
 ```
 
-Planned operators:
+Operators:
 
 ```text
 ==
@@ -635,27 +645,35 @@ flowchart TD
 
 ## 🌍 Environments
 
-Planned environments can include:
+Environments are named sets of variables in `ztest.json`, and `--env` picks one:
 
-```text
-Development
-Staging
-Production
+```json
+{
+  "variables": { "version": "v1" },
+  "environments": {
+    "staging": {
+      "baseUrl": "https://staging.example.com",
+      "apiKey": { "env": "STAGING_API_KEY" }
+    },
+    "production": {
+      "baseUrl": "https://api.example.com",
+      "apiKey": { "env": "PRODUCTION_API_KEY" }
+    }
+  }
+}
 ```
 
-Variables:
-
-```text
-{{baseUrl}}
-{{token}}
-{{userId}}
+```bash
+ztest run tests/ --env staging
 ```
 
-Example:
+Tests use them like any other variable:
 
 ```text
 {{baseUrl}}/api/users
 ```
+
+See [`docs/TEST_FORMAT.md`](docs/TEST_FORMAT.md#environments) for the details.
 
 Variable priority:
 
@@ -682,17 +700,19 @@ Higher scopes override lower scopes.
 Sensitive values must be protected.
 
 ```text
-API_KEY = ********
-TOKEN   = ********
+var secret apiKey = "..."
+extract secret token = body.token
 ```
 
-Secrets should be redacted from:
+Values read with `{ "env": "NAME" }` in `ztest.json` are secret too, so keys need
+not be stored in a file. `ztest run` prints `********` in their place:
 
-- CLI
-- Desktop UI
-- Application logs
-- Reports
-- Error output
+```text
+Actual:   body.key == "********"
+```
+
+Secrets are redacted from `ztest run` output and error messages today. The Desktop
+UI and reports are planned, and will take the same masked results.
 
 ```mermaid
 flowchart LR
@@ -900,6 +920,7 @@ Exit codes:
 1 = Test failure
 2 = Configuration error
 3 = Internal error
+130 = Interrupted by Ctrl-C
 ```
 
 Pipeline:
@@ -1237,7 +1258,7 @@ Potential contribution areas:
 | [`TODO.md`](./TODO.md) | Engineering tasks |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | System architecture |
 | `docs/CLI.md` (planned) | CLI usage |
-| `docs/TEST_FORMAT.md` (planned) | `.ztest` format |
+| `docs/TEST_FORMAT.md` | `.ztest` format |
 | `docs/LOAD_TESTING.md` (planned) | Load testing |
 
 ---

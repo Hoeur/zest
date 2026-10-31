@@ -7,6 +7,9 @@ const app = @import("app.zig");
 const Canvas = @import("canvas.zig").Canvas;
 const State = @import("state.zig").State;
 const theme = @import("theme.zig");
+const Session = @import("api_request.zig").Session;
+const Controls = @import("api_controls.zig").Controls;
+const Rect = @import("layout.zig").Rect;
 
 const min_width = 1100;
 const min_height = 700;
@@ -19,6 +22,9 @@ var scale: f32 = 1;
 var cursor_arrow: win.Handle = null;
 var cursor_hand: win.Handle = null;
 var want_hand = false;
+var api: Session = undefined;
+var controls: Controls = .{};
+var controls_ready = false;
 
 var back_dc: win.Handle = null;
 var back_bitmap: win.Handle = null;
@@ -47,15 +53,28 @@ fn paint(hwnd: win.Handle) void {
     ensureBackBuffer(hdc, client.right, client.bottom);
 
     canvas.begin(back_dc, scale, theme.background) catch return;
+    const rendered_screen = state.screen;
     const result = app.frame(
         &canvas,
         &state,
+        &api,
         input,
         @as(f32, @floatFromInt(client.right)) / scale,
         @as(f32, @floatFromInt(client.bottom)) / scale,
     );
     canvas.end();
     input.clicked = false;
+
+    if (controls_ready) {
+        const area: Rect = .{
+            .x = theme.sidebar_width,
+            .y = theme.topbar_height,
+            .w = @as(f32, @floatFromInt(client.right)) / scale - theme.sidebar_width,
+            .h = @as(f32, @floatFromInt(client.bottom)) / scale - theme.topbar_height,
+        };
+        controls.sync(hwnd, rendered_screen == .api_tests and state.screen == .api_tests, area, scale);
+        controls.refresh(&api, if (state.response_tab == 0) .body else .headers);
+    }
 
     _ = win.BitBlt(hdc, 0, 0, client.right, client.bottom, back_dc, 0, 0, win.SRCCOPY);
     want_hand = result.hand;
@@ -65,6 +84,22 @@ fn paint(hwnd: win.Handle) void {
 
 fn windowProc(hwnd: win.Handle, msg: u32, wparam: usize, lparam: isize) callconv(.winapi) isize {
     switch (msg) {
+        win.WM_COMMAND => {
+            if (controls_ready and wparam & 0xFFFF == @import("api_controls.zig").send_id and
+                wparam >> 16 == 0 and @as(win.Handle, @ptrFromInt(@as(usize, @bitCast(lparam)))) == controls.send)
+            {
+                sendOrCancel(hwnd);
+            }
+            return 0;
+        },
+        win.WM_TIMER => {
+            if (api.poll()) _ = win.InvalidateRect(hwnd, null, 0);
+            return 0;
+        },
+        win.WM_CTLCOLOREDIT, win.WM_CTLCOLORSTATIC, win.WM_CTLCOLORLISTBOX => {
+            if (controls_ready) return controls.color(@ptrFromInt(wparam));
+            return win.DefWindowProcW(hwnd, msg, wparam, lparam);
+        },
         win.WM_DESTROY => {
             win.PostQuitMessage(0);
             return 0;
@@ -105,6 +140,7 @@ fn windowProc(hwnd: win.Handle, msg: u32, wparam: usize, lparam: isize) callconv
             return 0;
         },
         win.WM_MOUSEWHEEL => {
+            if (state.screen == .api_tests) return 0;
             const delta: i16 = @bitCast(@as(u16, @truncate(wparam >> 16)));
             state.scroll -= @as(f32, @floatFromInt(delta)) / 120 * wheel_step;
             _ = win.InvalidateRect(hwnd, null, 0);
@@ -120,7 +156,16 @@ fn windowProc(hwnd: win.Handle, msg: u32, wparam: usize, lparam: isize) callconv
     }
 }
 
-pub fn main() !void {
+fn sendOrCancel(hwnd: win.Handle) void {
+    controls.sendOrCancel(&api);
+    if (api.busy()) _ = win.SetFocus(controls.send);
+    controls.refresh(&api, if (state.response_tab == 0) .body else .headers);
+    _ = win.InvalidateRect(hwnd, null, 0);
+}
+
+pub fn main(init: std.process.Init) !void {
+    api = .init(init.gpa, init.io);
+    defer api.deinit();
     _ = win.SetProcessDpiAwarenessContext(win.DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     var token: usize = 0;
@@ -148,7 +193,7 @@ pub fn main() !void {
         0,
         class_name,
         std.unicode.utf8ToUtf16LeStringLiteral("ZTest"),
-        win.WS_OVERLAPPEDWINDOW,
+        win.WS_OVERLAPPEDWINDOW | win.WS_CLIPCHILDREN,
         win.CW_USEDEFAULT,
         win.CW_USEDEFAULT,
         1448,
@@ -159,6 +204,16 @@ pub fn main() !void {
         null,
     );
     if (hwnd == null) return error.CreateWindowFailed;
+    defer _ = win.DestroyWindow(hwnd);
+
+    controls = try .init(hwnd);
+    controls_ready = true;
+    defer {
+        controls_ready = false;
+        controls.deinit();
+    }
+    if (win.SetTimer(hwnd, 1, 50, null) == 0) return error.CreateTimerFailed;
+    defer _ = win.KillTimer(hwnd, 1);
 
     scale = @as(f32, @floatFromInt(win.GetDpiForWindow(hwnd))) / 96;
     const dark: i32 = 1;
@@ -167,6 +222,21 @@ pub fn main() !void {
 
     var msg: win.Msg = .{};
     while (win.GetMessageW(&msg, null, 0, 0) > 0) {
+        if (state.screen == .api_tests) {
+            // Standard Win32 EDIT controls do not implement Ctrl+A themselves.
+            const focus = win.GetFocus();
+            if (msg.message == win.WM_KEYDOWN and msg.wParam == 'A' and win.GetKeyState(win.VK_CONTROL) < 0 and
+                (focus == controls.url or focus == controls.response))
+            {
+                _ = win.SendMessageW(focus, win.EM_SETSEL, 0, -1);
+                continue;
+            }
+            if (msg.message == win.WM_KEYDOWN and msg.wParam == win.VK_RETURN and win.GetFocus() == controls.url) {
+                sendOrCancel(hwnd);
+                continue;
+            }
+            if (win.IsDialogMessageW(hwnd, &msg) != 0) continue;
+        }
         _ = win.TranslateMessage(&msg);
         _ = win.DispatchMessageW(&msg);
     }

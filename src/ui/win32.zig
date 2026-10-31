@@ -58,6 +58,30 @@ pub const WM_MOUSEMOVE = 0x0200;
 pub const WM_LBUTTONUP = 0x0202;
 pub const WM_MOUSEWHEEL = 0x020A;
 pub const WM_DPICHANGED = 0x02E0;
+pub const WM_COMMAND = 0x0111;
+pub const WM_TIMER = 0x0113;
+pub const WM_KEYDOWN = 0x0100;
+pub const WM_SETFONT = 0x0030;
+pub const WM_CTLCOLOREDIT = 0x0133;
+pub const WM_CTLCOLORLISTBOX = 0x0134;
+pub const WM_CTLCOLORSTATIC = 0x0138;
+pub const CB_ADDSTRING = 0x0143;
+pub const CB_GETCURSEL = 0x0147;
+pub const CB_SETCURSEL = 0x014E;
+pub const EM_SETLIMITTEXT = 0x00C5;
+pub const EM_SETSEL = 0x00B1;
+pub const VK_RETURN = 0x0D;
+pub const VK_CONTROL = 0x11;
+pub const WS_CHILD = 0x40000000;
+pub const WS_CLIPCHILDREN = 0x02000000;
+pub const WS_TABSTOP = 0x00010000;
+pub const WS_VSCROLL = 0x00200000;
+pub const ES_AUTOHSCROLL = 0x0080;
+pub const ES_MULTILINE = 0x0004;
+pub const ES_AUTOVSCROLL = 0x0040;
+pub const ES_READONLY = 0x0800;
+pub const CBS_DROPDOWNLIST = 0x0003;
+pub const SW_HIDE = 0;
 
 pub const WS_OVERLAPPEDWINDOW = 0x00CF0000;
 pub const CW_USEDEFAULT: i32 = @bitCast(@as(u32, 0x80000000));
@@ -91,6 +115,18 @@ pub extern "user32" fn LoadIconW(instance: Handle, name: usize) callconv(.winapi
 pub extern "user32" fn SetWindowPos(hwnd: Handle, after: Handle, x: i32, y: i32, w: i32, h: i32, flags: u32) callconv(.winapi) i32;
 pub extern "user32" fn SetProcessDpiAwarenessContext(context: isize) callconv(.winapi) i32;
 pub extern "user32" fn GetDpiForWindow(hwnd: Handle) callconv(.winapi) u32;
+pub extern "user32" fn SendMessageW(hwnd: Handle, msg: u32, wparam: usize, lparam: isize) callconv(.winapi) isize;
+pub extern "user32" fn SetWindowTextW(hwnd: Handle, text: [*:0]const u16) callconv(.winapi) i32;
+pub extern "user32" fn GetWindowTextW(hwnd: Handle, text: [*]u16, max: i32) callconv(.winapi) i32;
+pub extern "user32" fn GetWindowTextLengthW(hwnd: Handle) callconv(.winapi) i32;
+pub extern "user32" fn EnableWindow(hwnd: Handle, enabled: i32) callconv(.winapi) i32;
+pub extern "user32" fn SetFocus(hwnd: Handle) callconv(.winapi) Handle;
+pub extern "user32" fn GetFocus() callconv(.winapi) Handle;
+pub extern "user32" fn GetKeyState(key: i32) callconv(.winapi) i16;
+pub extern "user32" fn SetTimer(hwnd: Handle, id: usize, ms: u32, callback: ?*const anyopaque) callconv(.winapi) usize;
+pub extern "user32" fn KillTimer(hwnd: Handle, id: usize) callconv(.winapi) i32;
+pub extern "user32" fn IsDialogMessageW(hwnd: Handle, msg: *Msg) callconv(.winapi) i32;
+pub extern "user32" fn DestroyWindow(hwnd: Handle) callconv(.winapi) i32;
 
 pub extern "gdi32" fn CreateCompatibleDC(hdc: Handle) callconv(.winapi) Handle;
 pub extern "gdi32" fn CreateCompatibleBitmap(hdc: Handle, w: i32, h: i32) callconv(.winapi) Handle;
@@ -98,6 +134,10 @@ pub extern "gdi32" fn SelectObject(hdc: Handle, object: Handle) callconv(.winapi
 pub extern "gdi32" fn DeleteObject(object: Handle) callconv(.winapi) i32;
 pub extern "gdi32" fn DeleteDC(hdc: Handle) callconv(.winapi) i32;
 pub extern "gdi32" fn BitBlt(dst: Handle, x: i32, y: i32, w: i32, h: i32, src: Handle, sx: i32, sy: i32, op: u32) callconv(.winapi) i32;
+pub extern "gdi32" fn CreateSolidBrush(color: u32) callconv(.winapi) Handle;
+pub extern "gdi32" fn SetTextColor(hdc: Handle, color: u32) callconv(.winapi) u32;
+pub extern "gdi32" fn SetBkColor(hdc: Handle, color: u32) callconv(.winapi) u32;
+pub extern "gdi32" fn CreateFontW(height: i32, width: i32, escapement: i32, orientation: i32, weight: i32, italic: u32, underline: u32, strikeout: u32, charset: u32, output_precision: u32, clip_precision: u32, quality: u32, pitch: u32, face: [*:0]const u16) callconv(.winapi) Handle;
 
 pub extern "dwmapi" fn DwmSetWindowAttribute(hwnd: Handle, attribute: u32, value: *const anyopaque, size: u32) callconv(.winapi) i32;
 

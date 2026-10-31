@@ -41,8 +41,8 @@
 - [x] Create configuration loader
 - [x] Create application context
 - [x] Define allocator strategy
-- [ ] Add graceful shutdown
-- [ ] Add signal handling where supported
+- [x] Add graceful shutdown
+- [x] Add signal handling where supported
 
 ### CLI
 
@@ -60,81 +60,81 @@
 
 ### Request Model
 
-- [ ] Define `HttpRequest`
-- [ ] Define HTTP method enum
-- [ ] Add URL parsing
-- [ ] Add query parameters
-- [ ] Add request headers
-- [ ] Add request cookies
-- [ ] Add raw request body
-- [ ] Add JSON request body
-- [ ] Add form-urlencoded body
-- [ ] Add multipart/form-data
+- [x] Define `HttpRequest`
+- [x] Define HTTP method enum
+- [x] Add URL parsing
+- [x] Add query parameters
+- [x] Add request headers
+- [x] Add request cookies
+- [x] Add raw request body
+- [x] Add JSON request body
+- [x] Add form-urlencoded body
+- [x] Add multipart/form-data
 
 ### Authentication
 
-- [ ] Basic Auth
-- [ ] Bearer Token
-- [ ] API Key header
-- [ ] API Key query parameter
+- [x] Basic Auth
+- [x] Bearer Token
+- [x] API Key header
+- [x] API Key query parameter
 
 ### HTTP Client
 
-- [ ] GET
-- [ ] POST
-- [ ] PUT
-- [ ] PATCH
-- [ ] DELETE
-- [ ] HEAD
-- [ ] OPTIONS
+- [x] GET
+- [x] POST
+- [x] PUT
+- [x] PATCH
+- [x] DELETE
+- [x] HEAD
+- [x] OPTIONS
 
 ### Network
 
-- [ ] HTTPS
-- [ ] TLS verification
-- [ ] timeout
-- [ ] redirects
-- [ ] connection reuse
-- [ ] keep-alive
+- [x] HTTPS
+- [x] TLS verification
+- [x] timeout
+- [x] redirects
+- [x] connection reuse
+- [x] keep-alive
 - [ ] proxy support later
 
 ### Response Model
 
-- [ ] Status code
-- [ ] Status text
-- [ ] Headers
-- [ ] Cookies
-- [ ] Body
-- [ ] Response size
-- [ ] Request duration
+- [x] Status code
+- [x] Status text
+- [x] Headers
+- [x] Cookies
+- [x] Body
+- [x] Response size
+- [x] Request duration
 
 ### Tests
 
-- [ ] GET test
-- [ ] POST test
-- [ ] redirect test
-- [ ] timeout test
-- [ ] invalid host test
-- [ ] malformed response test
+- [x] GET test
+- [x] POST test
+- [x] redirect test
+- [x] timeout test
+- [x] invalid host test
+- [x] malformed response test
 
 ---
 
 ## Phase 3 — API CLI
 
-- [ ] Add `ztest api`
-- [ ] Method argument
-- [ ] URL argument
-- [ ] `--header`
-- [ ] `--query`
-- [ ] `--json`
-- [ ] `--body`
-- [ ] `--timeout`
-- [ ] `--auth`
-- [ ] Pretty JSON output
-- [ ] Raw output mode
-- [ ] Show status code
-- [ ] Show duration
-- [ ] Show response size
+- [x] Add `ztest api`
+- [x] Method argument
+- [x] URL argument
+- [x] `--header`
+- [x] `--query`
+- [x] `--json`
+- [x] `--body`
+- [x] `--timeout`
+- [x] `--auth`
+- [x] Pretty JSON output
+- [x] Raw output mode
+- [x] Show status code
+- [x] Show duration
+- [x] Show response size
 
 Example target:
 
@@ -148,46 +148,46 @@ ztest api GET https://api.example.com/users
 
 ### Core
 
-- [ ] Define assertion interface
-- [ ] Assertion result model
-- [ ] Error message formatting
+- [x] Define assertion interface
+- [x] Assertion result model
+- [x] Error message formatting
 
 ### Status Assertions
 
-- [ ] equals
-- [ ] not equals
-- [ ] greater than
-- [ ] less than
+- [x] equals
+- [x] not equals
+- [x] greater than
+- [x] less than
 
 ### Timing Assertions
 
-- [ ] response time <
-- [ ] response time <=
-- [ ] response time >
-- [ ] response time >=
+- [x] response time <
+- [x] response time <=
+- [x] response time >
+- [x] response time >=
 
 ### Body Assertions
 
-- [ ] property exists
-- [ ] property does not exist
-- [ ] equals
-- [ ] not equals
-- [ ] contains
-- [ ] starts with
-- [ ] ends with
+- [x] property exists
+- [x] property does not exist
+- [x] equals
+- [x] not equals
+- [x] contains
+- [x] starts with
+- [x] ends with
 
 ### Header Assertions
 
-- [ ] exists
-- [ ] equals
-- [ ] contains
+- [x] exists
+- [x] equals
+- [x] contains
 
 ### JSON
 
-- [ ] JSON parser
-- [ ] property path parser
-- [ ] nested object lookup
-- [ ] array lookup
+- [x] JSON parser
+- [x] property path parser
+- [x] nested object lookup
+- [x] array lookup
 
 Example:
 
@@ -202,53 +202,53 @@ body.items[0].name == "Apple"
 
 ### Format
 
-- [ ] Finalize `.ztest` format
-- [ ] Define grammar
-- [ ] Write parser specification
+- [x] Finalize `.ztest` format
+- [x] Define grammar
+- [x] Write parser specification
 
 ### Lexer
 
-- [ ] Token types
-- [ ] strings
-- [ ] numbers
-- [ ] identifiers
-- [ ] operators
-- [ ] comments
-- [ ] line numbers
-- [ ] parsing errors
+- [x] Token types
+- [x] strings
+- [x] numbers
+- [x] identifiers
+- [x] operators
+- [x] comments
+- [x] line numbers
+- [x] parsing errors
 
 ### Parser
 
-- [ ] Parse suite
-- [ ] Parse test
-- [ ] Parse request
-- [ ] Parse headers
-- [ ] Parse body
-- [ ] Parse assertions
-- [ ] Parse variables
+- [x] Parse suite
+- [x] Parse test
+- [x] Parse request
+- [x] Parse headers
+- [x] Parse body
+- [x] Parse assertions
+- [x] Parse variables
 
 ### AST
 
-- [ ] Suite AST
-- [ ] Test AST
-- [ ] Request AST
-- [ ] Assertion AST
+- [x] Suite AST
+- [x] Test AST
+- [x] Request AST
+- [x] Assertion AST
 
 ---
 
 ## Phase 6 — Test Runner
 
-- [ ] Test execution model
-- [ ] Suite execution
-- [ ] Setup hooks
-- [ ] Teardown hooks
-- [ ] Skip test
-- [ ] Disable test
-- [ ] Test timeout
-- [ ] Fail-fast mode
-- [ ] Continue-on-failure mode
-- [ ] Execution summary
-- [ ] Exit codes
+- [x] Test execution model
+- [x] Suite execution
+- [x] Setup hooks
+- [x] Teardown hooks
+- [x] Skip test
+- [x] Disable test
+- [x] Test timeout
+- [x] Fail-fast mode
+- [x] Continue-on-failure mode
+- [x] Execution summary
+- [x] Exit codes
 
 Example:
 
@@ -262,11 +262,11 @@ ztest run tests/
 
 ### Variables
 
-- [ ] Global variables
-- [ ] Environment variables
-- [ ] Suite variables
-- [ ] Test variables
-- [ ] Runtime variables
+- [x] Global variables
+- [x] Environment variables
+- [x] Suite variables
+- [x] Test variables
+- [x] Runtime variables
 
 ### Variable Syntax
 
@@ -275,34 +275,34 @@ ztest run tests/
 {{token}}
 ```
 
-- [ ] Variable parser
-- [ ] Variable interpolation
-- [ ] Missing variable error
+- [x] Variable parser
+- [x] Variable interpolation
+- [x] Missing variable error
 
 ### Environments
 
-- [ ] Development
-- [ ] Staging
-- [ ] Production
-- [ ] custom environments
+- [x] Development
+- [x] Staging
+- [x] Production
+- [x] custom environments
 
 ### Secrets
 
-- [ ] Secret flag
+- [x] Secret flag
 - [ ] Mask UI
-- [ ] Mask CLI
-- [ ] Mask logs
+- [x] Mask CLI
+- [x] Mask logs
 - [ ] Mask reports
-- [ ] Secure local storage strategy
+- [x] Secure local storage strategy
 
 ---
 
 ## Phase 8 — Response Extraction
 
-- [ ] Extract body property
-- [ ] Extract response header
-- [ ] Store extracted value
-- [ ] Use variable in later requests
+- [x] Extract body property
+- [x] Extract response header
+- [x] Store extracted value
+- [x] Use variable in later requests
 
 Example:
 
@@ -319,6 +319,11 @@ Authorization: Bearer {{token}}
 ---
 
 ## Phase 9 — Desktop UI Foundation
+
+The Windows Win32/GDI+ shell already provides a window, render loop, mouse
+navigation, DPI handling, dark styling, and routed screens. The checklist below
+still includes the original cross-platform/zgui plan; sample screens do not
+imply functional editors. API Tests now sends real method-and-URL requests.
 
 ### Integration
 
@@ -361,9 +366,10 @@ Authorization: Bearer {{token}}
 
 ### Request Builder
 
-- [ ] Method dropdown
-- [ ] URL input
-- [ ] Send button
+- [x] Method dropdown
+- [x] URL input
+- [x] Send button
+- [x] Cancel pending request without blocking the window
 - [ ] Save button
 
 ### Params
@@ -397,13 +403,24 @@ Authorization: Bearer {{token}}
 
 ### Response
 
-- [ ] Status
-- [ ] Duration
-- [ ] Size
-- [ ] Body
-- [ ] Headers
+- [x] Status
+- [x] Duration
+- [x] Size
+- [x] Body
+- [x] Headers
 - [ ] Cookies
 - [ ] Raw
+
+### Next Desktop Slice
+
+- [ ] Editable request headers and raw/JSON body
+- [ ] Connect auth and environment variables to the core models
+- [ ] Evaluate assertions against the live response
+- [ ] Save and reopen `.ztest` requests
+
+The live response viewer supports text selection, copying, and scrolling.
+Requests have a 30-second timeout and a 4 MiB response limit; previews mark
+truncation above 64 KiB. Dashboard, suite, and load screens remain illustrative.
 
 ---
 
@@ -615,8 +632,8 @@ Authorization: Bearer {{token}}
 - [ ] Secret redaction
 - [ ] Token redaction
 - [ ] Password redaction
-- [ ] TLS validation
-- [ ] Response-size limit
+- [x] TLS validation
+- [x] Response-size limit
 - [ ] Request-size limit
 - [ ] Parser fuzzing
 - [ ] Invalid UTF-8 handling

@@ -84,7 +84,7 @@ fn addUi(
     const exe = b.addExecutable(.{
         .name = "ztest-ui",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/ui/main.zig"),
+            .root_source_file = b.path("src/desktop.zig"),
             .target = target,
             .optimize = optimize,
             .link_libc = true,

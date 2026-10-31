@@ -11,6 +11,7 @@ const api_test = @import("screens/api_test.zig");
 const suites = @import("screens/suites.zig");
 const load_test = @import("screens/load_test.zig");
 const placeholder = @import("screens/placeholder.zig");
+const Session = @import("api_request.zig").Session;
 
 pub const Input = struct {
     mouse_x: f32 = -1,
@@ -25,6 +26,7 @@ pub const Input = struct {
 pub const Ui = struct {
     c: *Canvas,
     state: *state.State,
+    api: *Session,
     input: Input,
     /// Set when the pointer is over something clickable.
     hand: bool = false,
@@ -68,8 +70,8 @@ const nav = [_]struct { screen: state.Screen, icon: []const u8 }{
     .{ .screen = .settings, .icon = theme.icon.settings },
 };
 
-pub fn frame(c: *Canvas, s: *state.State, input: Input, width: f32, height: f32) Result {
-    var ui: Ui = .{ .c = c, .state = s, .input = input };
+pub fn frame(c: *Canvas, s: *state.State, api: *Session, input: Input, width: f32, height: f32) Result {
+    var ui: Ui = .{ .c = c, .state = s, .api = api, .input = input };
     const main: Rect = .{
         .x = theme.sidebar_width,
         .y = theme.topbar_height,
@@ -137,18 +139,19 @@ fn drawTopBar(ui: *Ui, width: f32) void {
     c.text(.icon, theme.icon.search, .{ .x = search.x + 14, .y = search.y, .w = 20, .h = search.h }, .left, theme.muted);
     c.text(.body, "Search tests, suites, or endpoints...", .{ .x = search.x + 42, .y = search.y, .w = search.w - 56, .h = search.h }, .left, theme.muted);
 
-    if (ui.pressed(environment)) {
+    const direct = ui.state.screen == .api_tests;
+    if (!direct and ui.pressed(environment)) {
         ui.state.environment = ui.state.environment.next();
     }
-    if (ui.hovered(environment)) c.fillRound(environment, 8, theme.raised);
+    if (!direct and ui.hovered(environment)) c.fillRound(environment, 8, theme.raised);
     c.strokeRound(environment, 8, theme.border);
-    const dot = switch (ui.state.environment) {
+    const dot = if (direct) theme.blue else switch (ui.state.environment) {
         .production => theme.green,
         .staging, .development => theme.amber,
     };
     c.circle(environment.x + 20, environment.y + 19, 5, dot);
-    c.text(.body, ui.state.environment.label(), .{ .x = environment.x + 36, .y = environment.y, .w = 100, .h = environment.h }, .left, theme.text);
-    c.text(.icon, theme.icon.chevron_down, .{ .x = environment.right() - 30, .y = environment.y, .w = 18, .h = environment.h }, .left, theme.muted);
+    c.text(.body, if (direct) "Direct URL" else ui.state.environment.label(), .{ .x = environment.x + 36, .y = environment.y, .w = 100, .h = environment.h }, .left, theme.text);
+    if (!direct) c.text(.icon, theme.icon.chevron_down, .{ .x = environment.right() - 30, .y = environment.y, .w = 18, .h = environment.h }, .left, theme.muted);
 
     c.text(.icon, theme.icon.bell, .{ .x = bar.right() - 42, .y = 14, .w = 28, .h = 38 }, .center, theme.text);
 }
