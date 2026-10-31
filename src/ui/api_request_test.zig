@@ -4,6 +4,44 @@ const testing = std.testing;
 const api = @import("api_request.zig");
 const Server = @import("../core/http/client_test.zig").Server;
 
+test "API mockup layout keeps the primary controls within a small window" {
+    const screen = @import("screens/api_test.zig");
+    const area: @import("layout.zig").Rect = .{ .x = 245, .y = 66, .w = 855, .h = 594 };
+    const boxes = screen.controls(area);
+    for ([_]@import("layout.zig").Rect{ boxes.method, boxes.url, boxes.send, boxes.headers, boxes.body_kind, boxes.body, boxes.response }) |box| {
+        try testing.expect(box.w > 0 and box.h > 0);
+        try testing.expect(box.y >= area.y and box.bottom() <= area.bottom());
+        try testing.expect(box.x >= area.x and box.right() <= area.right());
+    }
+    const layout = screen.layout(area);
+    try testing.expect(layout.response.right() < layout.assertions.x);
+    const buttons = screen.requestTabs(area) ++ screen.responseTabs(area) ++ screen.bodyModes(area);
+    for (buttons) |box| {
+        try testing.expect(box.w > 0 and box.h > 0);
+        try testing.expect(box.y >= area.y and box.bottom() <= area.bottom());
+        try testing.expect(box.x >= area.x and box.right() <= area.right());
+    }
+    const body_modes = screen.bodyModes(area);
+    for (body_modes) |mode| try testing.expect(mode.right() < boxes.body_kind.x);
+    const request_tabs = screen.requestTabs(area);
+    for (request_tabs[0..4], request_tabs[1..5]) |left, right| try testing.expect(left.right() < right.x);
+    const response_tabs = screen.responseTabs(area);
+    for (response_tabs[0..3], response_tabs[1..4]) |left, right| try testing.expect(left.right() < right.x);
+}
+
+test "response tabs show actual cookies and an empty raw response" {
+    var session = api.Session.init(testing.allocator, testing.io);
+    defer session.deinit();
+    session.phase = .completed;
+    session.response = .{ .status = 204, .status_text = "No Content", .headers = &.{.{ .name = "X-Test", .value = "yes" }}, .cookies = &.{.{ .name = "test", .value = "value" }}, .duration_ns = 1, .body = "" };
+    const cookies = try session.preview(testing.allocator, .cookies);
+    defer testing.allocator.free(cookies);
+    try testing.expectEqualStrings("test = value\r\n", cookies);
+    const raw = try session.preview(testing.allocator, .raw);
+    defer testing.allocator.free(raw);
+    try testing.expect(std.mem.startsWith(u8, raw, "HTTP 204 No Content\r\nX-Test: yes\r\n"));
+}
+
 fn finish(session: *api.Session) !void {
     const start = std.Io.Timestamp.now(testing.io, .awake);
     while (!session.poll()) {

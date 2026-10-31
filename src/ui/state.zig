@@ -101,7 +101,7 @@ pub const State = struct {
     scroll: f32 = 0,
 
     request_tab: usize = 3,
-    body_type: usize = 3,
+    body_type: usize = 0,
     response_tab: usize = 0,
 
     suite: usize = 0,

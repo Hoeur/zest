@@ -9,7 +9,7 @@ pub const draft = @import("../core/http/draft.zig");
 
 pub const methods = [_]model.Method{ .GET, .POST, .PUT, .PATCH, .DELETE, .HEAD, .OPTIONS };
 pub const Phase = enum { idle, running, canceling, completed, failed, canceled };
-pub const View = enum { body, headers };
+pub const View = enum { body, headers, cookies, raw };
 pub const preview_limit = 64 * 1024;
 
 pub const Session = struct {
@@ -131,8 +131,19 @@ pub const Session = struct {
         var out: Io.Writer.Allocating = .init(allocator);
         defer out.deinit();
         switch (view) {
-            .body => {
-                if (response.body.len == 0) return allocator.dupe(u8, "(empty response body)");
+            .body, .raw => {
+                if (view == .raw) {
+                    try out.writer.print("HTTP {d} {s}\r\n", .{ response.status, response.status_text });
+                    for (response.headers) |header| {
+                        if (out.written().len >= preview_limit) break;
+                        try writePreview(&out.writer, header.name);
+                        try out.writer.writeAll(": ");
+                        try writePreview(&out.writer, header.value);
+                        try out.writer.writeAll("\r\n");
+                    }
+                    try out.writer.writeAll("\r\n");
+                }
+                if (response.body.len == 0 and view == .body) return allocator.dupe(u8, "(empty response body)");
                 try writePreview(&out.writer, response.body);
             },
             .headers => {
@@ -144,6 +155,16 @@ pub const Session = struct {
                     try writePreview(&out.writer, header.name);
                     try out.writer.writeAll(": ");
                     try writePreview(&out.writer, header.value);
+                    try out.writer.writeAll("\r\n");
+                }
+            },
+            .cookies => {
+                if (response.cookies.len == 0) return allocator.dupe(u8, "(no response cookies)");
+                for (response.cookies) |cookie| {
+                    if (out.written().len >= preview_limit) break;
+                    try writePreview(&out.writer, cookie.name);
+                    try out.writer.writeAll(" = ");
+                    try writePreview(&out.writer, cookie.value);
                     try out.writer.writeAll("\r\n");
                 }
             },

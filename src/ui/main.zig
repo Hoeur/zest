@@ -72,8 +72,8 @@ fn paint(hwnd: win.Handle) void {
             .w = @as(f32, @floatFromInt(client.right)) / scale - theme.sidebar_width,
             .h = @as(f32, @floatFromInt(client.bottom)) / scale - theme.topbar_height,
         };
-        controls.sync(hwnd, rendered_screen == .api_tests and state.screen == .api_tests, area, scale);
-        controls.refresh(&api, if (state.response_tab == 0) .body else .headers);
+        controls.sync(hwnd, rendered_screen == .api_tests and state.screen == .api_tests, area, scale, &state);
+        controls.refresh(&api, selectedView());
     }
 
     _ = win.BitBlt(hdc, 0, 0, client.right, client.bottom, back_dc, 0, 0, win.SRCCOPY);
@@ -84,9 +84,20 @@ fn paint(hwnd: win.Handle) void {
 
 fn windowProc(hwnd: win.Handle, msg: u32, wparam: usize, lparam: isize) callconv(.winapi) isize {
     switch (msg) {
+        win.WM_DRAWITEM => {
+            if (controls_ready and controls.drawButton(&canvas, @ptrFromInt(@as(usize, @bitCast(lparam))), &state)) return 1;
+            return win.DefWindowProcW(hwnd, msg, wparam, lparam);
+        },
         win.WM_COMMAND => {
+            if (controls_ready and wparam >> 16 == 0 and
+                controls.activate(@ptrFromInt(@as(usize, @bitCast(lparam))), &state, api.busy()))
+            {
+                controls.refresh(&api, selectedView());
+                _ = win.InvalidateRect(hwnd, null, 0);
+                return 0;
+            }
             if (controls_ready and wparam & 0xFFFF == @import("api_controls.zig").body_kind_id and wparam >> 16 == win.CBN_SELCHANGE) {
-                controls.refresh(&api, if (state.response_tab == 0) .body else .headers);
+                controls.refresh(&api, selectedView());
                 _ = win.InvalidateRect(hwnd, null, 0);
             }
             if (controls_ready and wparam & 0xFFFF == @import("api_controls.zig").send_id and
@@ -163,8 +174,17 @@ fn windowProc(hwnd: win.Handle, msg: u32, wparam: usize, lparam: isize) callconv
 fn sendOrCancel(hwnd: win.Handle) void {
     controls.sendOrCancel(&api);
     if (api.busy()) _ = win.SetFocus(controls.send);
-    controls.refresh(&api, if (state.response_tab == 0) .body else .headers);
+    controls.refresh(&api, selectedView());
     _ = win.InvalidateRect(hwnd, null, 0);
+}
+
+fn selectedView() @import("api_request.zig").View {
+    return switch (state.response_tab) {
+        1 => .headers,
+        2 => .cookies,
+        3 => .raw,
+        else => .body,
+    };
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -226,7 +246,21 @@ pub fn main(init: std.process.Init) !void {
 
     var msg: win.Msg = .{};
     while (win.GetMessageW(&msg, null, 0, 0) > 0) {
+        // Reach every sidebar page without needing a pointer first.
+        if (msg.message == win.WM_KEYDOWN and msg.wParam >= '1' and msg.wParam <= '7' and
+            win.GetKeyState(win.VK_CONTROL) < 0 and win.GetKeyState(win.VK_MENU) >= 0)
+        {
+            state.navigate(@fromBackingInt(@intCast(msg.wParam - '1')));
+            _ = win.InvalidateRect(hwnd, null, 0);
+            continue;
+        }
         if (state.screen == .api_tests) {
+            if (msg.message == win.WM_KEYDOWN and msg.wParam == win.VK_TAB and
+                win.GetKeyState(win.VK_CONTROL) >= 0 and win.GetKeyState(win.VK_MENU) >= 0)
+            {
+                controls.focusNext(win.GetKeyState(win.VK_SHIFT) < 0);
+                continue;
+            }
             // Standard Win32 EDIT controls do not implement Ctrl+A themselves.
             const focus = win.GetFocus();
             if (msg.message == win.WM_KEYDOWN and msg.wParam == 'A' and win.GetKeyState(win.VK_CONTROL) < 0 and

@@ -29,7 +29,13 @@
 What exists today:
 
 - **`zest`**: a small unit-test library for Zig, in `src/root.zig`.
-- **Desktop app** (Windows only): `zig build ui` opens the sample dashboard. **API Tests** sends real requests with an editable HTTP method, URL, headers, and None/Raw/JSON body modes. It supports Send/Cancel, status, duration, body size, and selectable Body/Headers views. Enter headers as one `Name: value` per line; JSON is validated before sending. Ctrl+Enter sends from an editor. Authentication controls, environments, assertions, and saving are not yet editable in the UI. Other screens still use sample data or placeholders.
+- **Desktop app** (Windows only): `zig build ui` opens the sample dashboard. **API Tests** follows the tabbed request-builder mockup in `ui/`, with a body-type sidebar, environment section, and Response/Assertions columns. Method, URL, and headers are editable; select **Body → raw** and choose **Raw text** or **JSON** to send a body, or **none** to omit it while retaining the draft. Enter headers as one `Name: value` per line. JSON is validated before sending; Ctrl+Enter sends from an editor. Send/Cancel and Body/Headers/Cookies/Raw response views use real data. Authentication controls, environments, assertions, and saving remain planned. Other screens still use sample data or placeholders.
+
+Desktop keyboard controls: **Ctrl+1–7** opens sidebar pages in order (**Ctrl+2**
+opens API Tests). In API Tests, **Tab/Shift+Tab** moves between visible, enabled
+controls; **Space** activates focused request/response tabs and the None/Raw body
+modes. The format selector uses the arrow keys. **Ctrl+A** selects editor text,
+and **Ctrl+Enter** sends or cancels a request from an editor.
 
 Using `zest`:
 

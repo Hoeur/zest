@@ -59,6 +59,19 @@ pub const WM_LBUTTONUP = 0x0202;
 pub const WM_MOUSEWHEEL = 0x020A;
 pub const WM_DPICHANGED = 0x02E0;
 pub const WM_COMMAND = 0x0111;
+pub const WM_DRAWITEM = 0x002B;
+pub const BS_OWNERDRAW = 0x000B;
+pub const DrawItemStruct = extern struct {
+    CtlType: u32,
+    CtlID: u32,
+    itemID: u32,
+    itemAction: u32,
+    itemState: u32,
+    hwndItem: Handle,
+    hDC: Handle,
+    rcItem: Rect,
+    itemData: usize,
+};
 pub const WM_TIMER = 0x0113;
 pub const WM_KEYDOWN = 0x0100;
 pub const WM_SETFONT = 0x0030;
@@ -71,7 +84,10 @@ pub const CB_SETCURSEL = 0x014E;
 pub const EM_SETLIMITTEXT = 0x00C5;
 pub const EM_SETSEL = 0x00B1;
 pub const VK_RETURN = 0x0D;
+pub const VK_TAB = 0x09;
+pub const VK_SHIFT = 0x10;
 pub const VK_CONTROL = 0x11;
+pub const VK_MENU = 0x12;
 pub const WS_CHILD = 0x40000000;
 pub const WS_CLIPCHILDREN = 0x02000000;
 pub const WS_TABSTOP = 0x00010000;
@@ -122,6 +138,7 @@ pub extern "user32" fn SetWindowTextW(hwnd: Handle, text: [*:0]const u16) callco
 pub extern "user32" fn GetWindowTextW(hwnd: Handle, text: [*]u16, max: i32) callconv(.winapi) i32;
 pub extern "user32" fn GetWindowTextLengthW(hwnd: Handle) callconv(.winapi) i32;
 pub extern "user32" fn EnableWindow(hwnd: Handle, enabled: i32) callconv(.winapi) i32;
+pub extern "user32" fn IsWindowEnabled(hwnd: Handle) callconv(.winapi) i32;
 pub extern "user32" fn SetFocus(hwnd: Handle) callconv(.winapi) Handle;
 pub extern "user32" fn GetFocus() callconv(.winapi) Handle;
 pub extern "user32" fn GetKeyState(key: i32) callconv(.winapi) i16;
