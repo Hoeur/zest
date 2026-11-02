@@ -214,7 +214,7 @@ fn printLimited(w: *Io.Writer, value: anytype, other: @TypeOf(value)) void {
         printValue(&limited, value);
     }
 
-    if (limited.end == buffer.len) buffer[buffer.len - 3..].* = "...".*;
+    if (limited.end == buffer.len) buffer[buffer.len - 3 ..].* = "...".*;
     w.writeAll(limited.buffered()) catch {};
 }
 

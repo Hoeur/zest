@@ -77,7 +77,7 @@ pub const Canvas = struct {
             try check(win.GdipCreateFontFamilyFromName(name, null, family));
         }
         for (&c.fonts, 0..) |*font, i| {
-            const spec = @as(Font, @enumFromInt(i)).spec();
+            const spec = @as(Font, @fromBackingInt(@intCast(i))).spec();
             try check(win.GdipCreateFont(c.families[spec.family], spec.size, @intFromBool(spec.bold), win.UnitPixel, font));
         }
         return c;
@@ -181,9 +181,9 @@ pub const Canvas = struct {
         var buffer: [256]u16 = undefined;
         const len = std.unicode.utf8ToUtf16Le(&buffer, str) catch return;
         _ = win.GdipSetSolidFillColor(c.brush, color);
-        _ = win.GdipSetStringFormatAlign(c.format, @intFromEnum(alignment));
+        _ = win.GdipSetStringFormatAlign(c.format, @backingInt(alignment));
         const layout: win.RectF = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h };
-        _ = win.GdipDrawString(c.g, &buffer, @intCast(len), c.fonts[@intFromEnum(font)], &layout, c.format, c.brush);
+        _ = win.GdipDrawString(c.g, &buffer, @intCast(len), c.fonts[@backingInt(font)], &layout, c.format, c.brush);
     }
 
     pub fn measure(c: *Canvas, font: Font, str: []const u8) f32 {
@@ -191,8 +191,8 @@ pub const Canvas = struct {
         const len = std.unicode.utf8ToUtf16Le(&buffer, str) catch return 0;
         const layout: win.RectF = .{ .x = 0, .y = 0, .w = 4096, .h = 256 };
         var box: win.RectF = .{ .x = 0, .y = 0, .w = 0, .h = 0 };
-        _ = win.GdipSetStringFormatAlign(c.format, @intFromEnum(Align.left));
-        _ = win.GdipMeasureString(c.g, &buffer, @intCast(len), c.fonts[@intFromEnum(font)], &layout, c.format, &box, null, null);
+        _ = win.GdipSetStringFormatAlign(c.format, @backingInt(Align.left));
+        _ = win.GdipMeasureString(c.g, &buffer, @intCast(len), c.fonts[@backingInt(font)], &layout, c.format, &box, null, null);
         return box.w;
     }
 };
