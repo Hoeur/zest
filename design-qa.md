@@ -23,9 +23,9 @@ The source and final implementation were opened together in one comparison input
 
 ## Required fidelity surfaces
 
-- **Fonts/typography:** the repository's existing font families, title hierarchy, and text sizes are retained. Code editors use monospace text. Colorized JSON and line-number gutters remain follow-up editor polish.
+- **Fonts/typography:** the repository's existing font families, title hierarchy, and text sizes are retained. Code editors use monospace text. JSON colors were added in the follow-up below; line-number gutters remain future polish.
 - **Spacing/layout:** the reference's major regions, tab order, body sidebar, and two-column results are restored. Smaller windows use shorter scrollable editors; maximizing preserves the same layout. Automated geometry checks cover the minimum window size.
-- **Colors/tokens:** existing dark backgrounds, panel borders, amber selection states, and status colors are reused. Native combo borders and scrollbars retain Windows styling.
+- **Colors/tokens:** existing dark backgrounds, panel borders, amber selection states, and status colors are reused. Native selectors now use dark rendering; scrollbars retain Windows styling.
 - **Image quality/assets:** the existing project logo and icon resources are retained without replacement artwork. The source's alternate logo and Mac window chrome are outside this layout correction.
 - **Copy/content:** real response data replaces illustrative results. Unset environments and planned assertions are not shown as configured, passing, or saved. Unsupported body types and future actions remain disabled.
 
@@ -80,10 +80,36 @@ separate local API changes. The desktop/CLI verification build, full formatting
 check, and Git whitespace check passed. The main executable was rebuilt after
 the keyboard integration and recaptured as `api-builder-live.jpg`.
 
-## Follow-up polish
+## JSON and control polish — 2026-11-02
 
-- P3: native combo and scrollbar styling can be brought closer to the mockup.
-- P3: add code-editor syntax colors and line-number gutters.
+The final native capture is
+[`docs/design-qa/api-builder-polished.jpg`](docs/design-qa/api-builder-polished.jpg).
+The source and final build were inspected together in
+[`docs/design-qa/api-builder-polish-comparison.jpg`](docs/design-qa/api-builder-polish-comparison.jpg).
+The restored request/sidebar/environment and Response/Assertions composition is
+preserved. Code uses blue keys, pink strings, amber numbers, and purple literals.
+Both closed selectors and their open menus use the dark palette, with an amber
+keyboard focus indicator. Windows scrollbars remain a visible fidelity difference.
+
+- Native Rich Edit preserves text editing, selection, scrolling, and Undo/Redo.
+  Automated Windows tests check real character colors, UTF-16 selection around
+  an emoji, exact CRLF text, owned-buffer cleanup, Undo/Redo, and plain-text reset.
+- Interactive typing and Ctrl+Z/Ctrl+Y retained the caret and scrolled position.
+  The native method menu supports arrow keys, type selection, and Enter.
+- A final loopback POST received the exact multiline JSON, including the emoji,
+  with `application/json`. Its HTTP 200 JSON response is colored; response Headers
+  remain plain readable text. None/busy bodies are read-only and skipped by Tab.
+- Highlighting is bounded to 32,768 UTF-16 units and 4,096 tokens. Larger content
+  stays plain text; request validation and payload limits remain in core.
+- The isolated staged source in `zig-out/ui-polish-verification/` passed
+  **184/184 tests** and built the CLI and desktop executable. The current working
+  tree also passed its build/tests. Separate local API/formatting changes remain
+  excluded from this UI commit.
+
+## Remaining polish
+
+- P3: native scrollbar styling can be brought closer to the mockup.
+- P3: add code-editor line-number gutters.
 - P3: improve the long, disabled form-urlencoded label at smaller widths.
 
 ## Implementation checklist

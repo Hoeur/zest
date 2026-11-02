@@ -89,6 +89,10 @@ fn windowProc(hwnd: win.Handle, msg: u32, wparam: usize, lparam: isize) callconv
             return win.DefWindowProcW(hwnd, msg, wparam, lparam);
         },
         win.WM_COMMAND => {
+            if (controls_ready and wparam >> 16 == win.EN_CHANGE) {
+                controls.changed(@ptrFromInt(@as(usize, @bitCast(lparam))));
+                return 0;
+            }
             if (controls_ready and wparam >> 16 == 0 and
                 controls.activate(@ptrFromInt(@as(usize, @bitCast(lparam))), &state, api.busy()))
             {
@@ -97,6 +101,7 @@ fn windowProc(hwnd: win.Handle, msg: u32, wparam: usize, lparam: isize) callconv
                 return 0;
             }
             if (controls_ready and wparam & 0xFFFF == @import("api_controls.zig").body_kind_id and wparam >> 16 == win.CBN_SELCHANGE) {
+                controls.recolorBody();
                 controls.refresh(&api, selectedView());
                 _ = win.InvalidateRect(hwnd, null, 0);
             }

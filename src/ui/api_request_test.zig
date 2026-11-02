@@ -3,6 +3,9 @@ const std = @import("std");
 const testing = std.testing;
 const api = @import("api_request.zig");
 const Server = @import("../core/http/client_test.zig").Server;
+test {
+    _ = @import("json_tokens.zig");
+}
 
 test "API mockup layout keeps the primary controls within a small window" {
     const screen = @import("screens/api_test.zig");

@@ -30,7 +30,16 @@ pub fn build(b: *std.Build) void {
 
     addUiTest(b, test_step, "src/ui/state.zig", target, optimize);
     addUiTest(b, test_step, "src/ui/layout.zig", target, optimize);
-    if (target.result.os.tag == .windows) addUi(b, target, optimize);
+    if (target.result.os.tag == .windows) {
+        addUi(b, target, optimize);
+        const rich_tests = b.addTest(.{ .root_module = b.createModule(.{
+            .root_source_file = b.path("src/ui/rich_edit.zig"),
+            .target = target,
+            .optimize = optimize,
+        }) });
+        for ([_][]const u8{ "user32", "ole32" }) |lib| rich_tests.root_module.linkSystemLibrary(lib, .{});
+        test_step.dependOn(&b.addRunArtifact(rich_tests).step);
+    }
     addCli(b, test_step, target, optimize);
 }
 
@@ -92,7 +101,7 @@ fn addUi(
     });
     exe.subsystem = .windows;
     exe.root_module.addWin32ResourceFile(.{ .file = b.path("src/ui/assets/ztest.rc") });
-    for ([_][]const u8{ "user32", "gdi32", "gdiplus", "dwmapi", "shlwapi" }) |lib| {
+    for ([_][]const u8{ "user32", "gdi32", "gdiplus", "dwmapi", "shlwapi", "ole32", "comctl32" }) |lib| {
         exe.root_module.linkSystemLibrary(lib, .{});
     }
     b.installArtifact(exe);

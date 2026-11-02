@@ -7,6 +7,8 @@ const api = @import("api_request.zig");
 const theme = @import("theme.zig");
 const State = @import("state.zig").State;
 const Canvas = @import("canvas.zig").Canvas;
+const rich = @import("rich_edit.zig");
+const dark_combo = @import("dark_combo.zig");
 const wide = std.unicode.utf8ToUtf16LeStringLiteral;
 pub const send_id = 1003;
 pub const body_kind_id = 1005;
@@ -36,11 +38,15 @@ pub const Controls = struct {
     height: f32 = 0,
     body_enabled: bool = false,
     shown: [18]bool = @splat(false),
+    rich_library: ?rich.Library = null,
+    coloring: bool = false,
+    body_editable: bool = false,
 
     pub fn init(parent: win.Handle) !Controls {
         var c: Controls = .{};
         errdefer c.deinit();
-        c.method = try child(parent, "COMBOBOX", "", win.CBS_DROPDOWNLIST | win.WS_VSCROLL, 1001);
+        c.rich_library = rich.Library.init();
+        c.method = try child(parent, "COMBOBOX", "", win.CBS_DROPDOWNLIST | win.WS_VSCROLL | 0x0210, 1001); // OWNERDRAWFIXED | HASSTRINGS
         c.url = try child(parent, "EDIT", "http://localhost:3000/", win.ES_AUTOHSCROLL, 1002);
         c.send = try child(parent, "BUTTON", "Send", win.BS_OWNERDRAW, send_id);
         inline for (screen.request_tab_labels, 0..) |label, i| {
@@ -50,12 +56,24 @@ pub const Controls = struct {
         inline for (screen.body_mode_labels, 0..) |label, i| {
             c.body_modes[i] = try child(parent, "BUTTON", label, win.BS_OWNERDRAW, body_mode_id + i);
         }
-        c.body_kind = try child(parent, "COMBOBOX", "", win.CBS_DROPDOWNLIST | win.WS_VSCROLL, body_kind_id);
-        c.body = try child(parent, "EDIT", "", win.ES_MULTILINE | win.ES_AUTOVSCROLL | win.ES_WANTRETURN | win.WS_VSCROLL, 1007);
+        c.body_kind = try child(parent, "COMBOBOX", "", win.CBS_DROPDOWNLIST | win.WS_VSCROLL | 0x0210, body_kind_id);
+        c.body = if (c.rich_library != null)
+            try child(parent, "RICHEDIT50W", "", win.ES_MULTILINE | win.ES_AUTOVSCROLL | win.ES_WANTRETURN | win.WS_VSCROLL, 1007)
+        else
+            try child(parent, "EDIT", "", win.ES_MULTILINE | win.ES_AUTOVSCROLL | win.ES_WANTRETURN | win.WS_VSCROLL, 1007);
         inline for (screen.response_tab_labels, 0..) |label, i| {
             c.response_tabs[i] = try child(parent, "BUTTON", label, win.BS_OWNERDRAW, response_tab_id + i);
         }
-        c.response = try child(parent, "EDIT", "Enter a URL and send a request.", win.ES_MULTILINE | win.ES_AUTOVSCROLL | win.ES_READONLY | win.WS_VSCROLL, 1004);
+        c.response = if (c.rich_library != null)
+            try child(parent, "RICHEDIT50W", "Enter a URL and send a request.", win.ES_MULTILINE | win.ES_AUTOVSCROLL | win.ES_READONLY | win.WS_VSCROLL, 1004)
+        else
+            try child(parent, "EDIT", "Enter a URL and send a request.", win.ES_MULTILINE | win.ES_AUTOVSCROLL | win.ES_READONLY | win.WS_VSCROLL, 1004);
+        if (c.rich_library != null) {
+            rich.configure(c.body, true);
+            rich.configure(c.response, false);
+        }
+        try dark_combo.install(c.method);
+        try dark_combo.install(c.body_kind);
         inline for (api.methods) |method| {
             const label = wide(@tagName(method));
             _ = win.SendMessageW(c.method, win.CB_ADDSTRING, 0, @bitCast(@intFromPtr(label)));
@@ -80,6 +98,18 @@ pub const Controls = struct {
         if (c.font != null) _ = win.DeleteObject(c.font);
         if (c.mono_font != null) _ = win.DeleteObject(c.mono_font);
         if (c.brush != null) _ = win.DeleteObject(c.brush);
+        if (c.rich_library) |library| library.deinit();
+    }
+
+    pub fn recolorBody(c: *Controls) void {
+        if (c.rich_library == null or c.coloring) return;
+        c.coloring = true;
+        defer c.coloring = false;
+        rich.highlight(c.body, c.bodyKind() == .json);
+    }
+
+    pub fn changed(c: *Controls, sender: win.Handle) void {
+        if (sender == c.body) c.recolorBody();
     }
 
     pub fn color(c: *Controls, hdc: win.Handle) isize {
@@ -127,7 +157,10 @@ pub const Controls = struct {
         for ([_]win.Handle{ c.method, c.url, c.headers }) |handle| {
             _ = win.EnableWindow(handle, @intFromBool(!session.busy()));
         }
-        _ = win.EnableWindow(c.body, @intFromBool(!session.busy() and c.bodyKind() != .none));
+        c.body_editable = !session.busy() and c.bodyKind() != .none;
+        if (c.rich_library != null) {
+            _ = win.SendMessageW(c.body, 0x00CF, @intFromBool(!c.body_editable), 0); // EM_SETREADONLY avoids the system gray disabled background.
+        } else _ = win.EnableWindow(c.body, @intFromBool(c.body_editable));
         _ = win.EnableWindow(c.body_kind, @intFromBool(!session.busy() and c.body_enabled));
         for (c.body_modes) |handle| _ = win.EnableWindow(handle, @intFromBool(!session.busy()));
         if (c.last_phase == session.phase and c.last_view == view) return;
@@ -136,6 +169,14 @@ pub const Controls = struct {
         const text = session.preview(arena.allocator(), view) catch "Could not display the response";
         const utf16 = std.unicode.utf8ToUtf16LeAllocZ(arena.allocator(), text) catch return;
         _ = win.SetWindowTextW(c.response, utf16);
+        if (c.rich_library != null) {
+            const valid_json = if (view == .body) blk: {
+                const parsed = std.json.parseFromSlice(std.json.Value, arena.allocator(), text, .{}) catch break :blk false;
+                parsed.deinit();
+                break :blk true;
+            } else false;
+            rich.highlight(c.response, valid_json);
+        }
         _ = win.SetWindowTextW(c.send, switch (session.phase) {
             .running => wide("Cancel"),
             .canceling => wide("Canceling..."),
@@ -167,7 +208,7 @@ pub const Controls = struct {
     fn readAndStart(c: *Controls, session: *api.Session, allocator: std.mem.Allocator) !void {
         const url = try readText(allocator, c.url);
         const headers = try readText(allocator, c.headers);
-        const body = try readText(allocator, c.body);
+        const body = if (c.rich_library != null) try rich.read(allocator, c.body) else try readText(allocator, c.body);
         const selected = win.SendMessageW(c.method, win.CB_GETCURSEL, 0, 0);
         const index: usize = if (selected >= 0 and selected < api.methods.len) @intCast(selected) else 0;
         try session.startDraft(.{ .method = api.methods[index], .url = url, .headers = headers, .body_kind = c.bodyKind(), .body = body }, 30_000);
@@ -184,6 +225,10 @@ pub const Controls = struct {
     /// Native buttons provide Tab/Shift+Tab focus and Space activation for the
     /// custom-painted tabs and body modes, as well as the Send action.
     pub fn drawButton(c: *Controls, canvas: *Canvas, item: *const win.DrawItemStruct, state: *const State) bool {
+        if (item.CtlType == 3 and (item.hwndItem == c.method or item.hwndItem == c.body_kind)) {
+            dark_combo.drawItem(item);
+            return true;
+        }
         const target = c.button(item.hwndItem) orelse return false;
         canvas.begin(item.hDC, c.scale, theme.panel) catch return true;
         defer canvas.end();
@@ -227,6 +272,7 @@ pub const Controls = struct {
                 if (busy) return true;
                 state.body_type = if (selected.index == 0) 0 else 3;
                 c.body_enabled = state.body_type == 3;
+                c.recolorBody();
             },
         }
         for (c.handles()) |handle| _ = win.InvalidateRect(handle, null, 0);
@@ -262,7 +308,7 @@ pub const Controls = struct {
         }
         for (0..all.len) |_| {
             index = (index + if (reverse) all.len - 1 else @as(usize, 1)) % all.len;
-            if (c.shown[index] and win.IsWindowEnabled(all[index]) != 0) {
+            if (c.shown[index] and win.IsWindowEnabled(all[index]) != 0 and (all[index] != c.body or c.body_editable)) {
                 _ = win.SetFocus(all[index]);
                 return;
             }
@@ -286,6 +332,14 @@ pub const Controls = struct {
         c.font = font;
         c.mono_font = mono_font;
         c.scale = scale;
+        if (c.rich_library != null) {
+            c.recolorBody();
+            c.last_phase = null;
+        }
+        for ([_]win.Handle{ c.method, c.body_kind }) |handle| {
+            _ = win.SendMessageW(handle, 0x0153, ~@as(usize, 0), @intFromFloat(24 * scale)); // CB_SETITEMHEIGHT, closed selector
+            _ = win.SendMessageW(handle, 0x0153, 0, @intFromFloat(26 * scale));
+        }
     }
 };
 
