@@ -45,7 +45,7 @@ pub fn run(context: Context, out: *Io.Writer, request: Request, assertions: []co
 /// finish the exchange leaves here as non-zero.
 fn exitCode(err: http.Error) ExitCode {
     return switch (err) {
-        error.InvalidUrl, error.UnsupportedScheme, error.InvalidHeader => .config_error,
+        error.InvalidUrl, error.UnsupportedScheme, error.InvalidHeader, error.InvalidTimeout => .config_error,
         error.Interrupted => .interrupted,
         error.OutOfMemory => .internal_error,
         else => .test_failure,
@@ -133,6 +133,7 @@ test "other bodies print unchanged" {
 }
 
 test "usage mistakes and network failures have different exit codes" {
+    try testing.expectEqual(ExitCode.config_error, exitCode(error.InvalidTimeout));
     try testing.expectEqual(ExitCode.config_error, exitCode(error.InvalidUrl));
     try testing.expectEqual(ExitCode.test_failure, exitCode(error.Timeout));
     try testing.expectEqual(ExitCode.interrupted, exitCode(error.Interrupted));

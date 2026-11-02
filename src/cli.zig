@@ -170,6 +170,7 @@ const ApiArgs = struct {
             try a.query.append(arena, .{ .name = value[0..equals], .value = value[equals + 1 ..] });
         } else if (std.mem.eql(u8, name, "--timeout")) {
             const ms = std.fmt.parseInt(u64, value, 10) catch return error.InvalidValue;
+            if (ms > request_model.max_timeout_ms) return error.InvalidValue;
             a.timeout_ms = if (ms == 0) null else ms;
         } else if (std.mem.eql(u8, name, "--auth")) {
             a.auth = parseAuth(value) orelse return error.InvalidValue;
@@ -308,6 +309,21 @@ test "api reads its flags" {
             try testing.expect(options.no_color);
         }
     }.check);
+}
+
+test "timeout boundaries preserve unlimited mode and reject oversized values" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var bad_arg: []const u8 = "";
+    const allocator = arena.allocator();
+    const unlimited = try parse(allocator, &.{ "api", "GET", "http://localhost", "--timeout", "0" }, &bad_arg);
+    try testing.expectEqual(null, unlimited.request.?.timeout_ms);
+    const largest = try parse(allocator, &.{ "api", "GET", "http://localhost", "--timeout", "9223372036854775807" }, &bad_arg);
+    try testing.expectEqual(request_model.max_timeout_ms, largest.request.?.timeout_ms.?);
+    for ([_][:0]const u8{ "9223372036854775808", "18446744073709551615", "-1" }) |value| {
+        try testing.expectError(error.InvalidValue, parse(allocator, &.{ "api", "GET", "http://localhost", "--timeout", value }, &bad_arg));
+        try testing.expectEqualStrings(value, bad_arg);
+    }
 }
 
 test "auth kinds are parsed" {

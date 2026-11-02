@@ -18,6 +18,7 @@ const poll_ms = 50;
 pub const Error = Allocator.Error || error{
     InvalidUrl,
     InvalidHeader,
+    InvalidTimeout,
     UnsupportedScheme,
     Timeout,
     Interrupted,
@@ -36,6 +37,7 @@ pub fn describe(err: Error) []const u8 {
         error.InvalidUrl => "invalid URL: it must start with http:// or https://",
         error.UnsupportedScheme => "unsupported URL scheme: use http:// or https://",
         error.InvalidHeader => "invalid header: names and values cannot contain line breaks",
+        error.InvalidTimeout => "invalid timeout: milliseconds must fit in a signed 64-bit integer",
         error.Timeout => "request timed out",
         error.Interrupted => "interrupted",
         error.ConnectFailed => "could not connect to the host",
@@ -69,6 +71,7 @@ pub const Client = struct {
     /// An optional request-local flag lets a desktop caller cancel without
     /// changing process-wide shutdown state. The caller keeps it alive until return.
     pub fn sendCancelable(c: *Client, arena: Allocator, request: Request, canceled: ?*const std.atomic.Value(bool)) Error!Response {
+        if (request.timeout_ms) |ms| if (ms > encoding.max_timeout_ms) return error.InvalidTimeout;
         if (canceled) |flag| if (flag.load(.acquire)) return error.Interrupted;
         var task: Task = .{ .client = c, .arena = arena, .request = request };
         var future = c.io.concurrent(Task.run, .{&task}) catch return error.RequestFailed;

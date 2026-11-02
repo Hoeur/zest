@@ -39,6 +39,9 @@ pub const Auth = union(enum) {
 /// Used when the user names no time limit.
 pub const default_timeout_ms = 30_000;
 
+/// Largest timeout accepted by the signed millisecond clock API.
+pub const max_timeout_ms: u64 = std.math.maxInt(i64);
+
 pub const Request = struct {
     method: Method = .GET,
     url: []const u8,
@@ -48,6 +51,7 @@ pub const Request = struct {
     body: Body = .none,
     auth: Auth = .none,
     /// Covers the whole exchange, including redirects. Null waits forever.
+    /// Values above max_timeout_ms are rejected before starting any work.
     timeout_ms: ?u64 = null,
     /// Zero returns the 3xx response instead of following it. Credentials are
     /// dropped when a redirect changes the scheme, host or port.

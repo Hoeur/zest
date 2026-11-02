@@ -11,6 +11,24 @@
 
 ---
 
+## Review Follow-up — 2026-10-31
+
+- [x] Reject oversized CLI and core HTTP timeouts without panicking
+- [x] Add native keyboard-focusable request/response tabs and body modes
+- [x] Keep Tab/Shift+Tab navigation outside hidden and disabled editors
+- [x] Normalize source formatting with Zig 0.17
+- [x] Complete native request interaction verification after the keyboard changes
+- [x] Compare the mockup and implementation; preserve visual QA evidence in `design-qa.md`
+- [ ] Connect desktop auth and environment variables to the shared core
+- [ ] Add live assertion editing and evaluation
+- [ ] Save and reopen `.ztest` requests
+
+The next feature slice is desktop auth/environment integration. Suite management,
+history, load testing, exported reports, CI examples, and release packaging follow
+in the phases below. `ztest init` from the roadmap is also still unimplemented.
+
+---
+
 ## Phase 0 — Repository Setup
 
 - [-] Create repository
@@ -320,46 +338,46 @@ Authorization: Bearer {{token}}
 
 ## Phase 9 — Desktop UI Foundation
 
-The Windows Win32/GDI+ shell already provides a window, render loop, mouse
-navigation, DPI handling, dark styling, and routed screens. The checklist below
-still includes the original cross-platform/zgui plan; sample screens do not
-imply functional editors. API Tests now sends real requests with editable headers
-and None/Raw/JSON bodies.
+The Windows Win32/GDI+ shell provides a window, render loop, mouse navigation,
+DPI handling, dark styling, and routed screens. Native API controls support
+keyboard navigation; other sample screens still need complete keyboard support.
+Navigation entries below track routing, not functional screen completion. API
+Tests sends real requests with editable headers and None/Raw/JSON bodies.
 
 ### Integration
 
-- [-] Evaluate current Zig GUI library
-- [ ] Verify zgui on Zig 0.17
-- [ ] Create application window
-- [ ] Render loop
-- [ ] Keyboard input
-- [ ] Mouse input
-- [ ] DPI scaling
+- [x] Windows Win32/GDI+ integration
+- [ ] Evaluate cross-platform GUI support, including zgui compatibility
+- [x] Create application window
+- [x] Render loop
+- [-] Keyboard input (API controls and Ctrl+1–7 page navigation implemented)
+- [x] Mouse input
+- [x] DPI scaling
 
 ### Design System
 
-- [ ] Dark theme
-- [ ] colors
-- [ ] typography
-- [ ] spacing
-- [ ] buttons
-- [ ] inputs
-- [ ] tables
-- [ ] tabs
+- [x] Dark theme
+- [x] colors
+- [x] typography
+- [x] spacing
+- [x] buttons
+- [x] native API inputs
+- [-] tables (sample data only)
+- [x] tabs
 - [ ] modal
 - [ ] toast
-- [ ] status badge
+- [x] status badge
 
 ### Navigation
 
-- [ ] Sidebar
-- [ ] Dashboard
-- [ ] API Tests
-- [ ] Test Suites
-- [ ] Load Tests
-- [ ] Reports
-- [ ] Environments
-- [ ] Settings
+- [x] Sidebar routing
+- [x] Dashboard route (sample data)
+- [x] API Tests route (live requests; remaining features below)
+- [x] Test Suites route (sample data)
+- [x] Load Tests route (sample data)
+- [x] Reports route (placeholder)
+- [x] Environments route (placeholder)
+- [x] Settings route (placeholder)
 
 ---
 
@@ -409,8 +427,8 @@ and None/Raw/JSON bodies.
 - [x] Size
 - [x] Body
 - [x] Headers
-- [ ] Cookies
-- [ ] Raw
+- [x] Cookies
+- [x] Raw
 
 ### Next Desktop Slice
 
@@ -585,7 +603,7 @@ truncation above 64 KiB. Dashboard, suite, and load screens remain illustrative.
 
 ## Phase 17 — Reporting
 
-- [ ] Console reporter
+- [x] Console reporter
 - [ ] JSON reporter
 - [ ] HTML reporter
 - [ ] JUnit reporter
@@ -605,8 +623,8 @@ truncation above 64 KiB. Dashboard, suite, and load screens remain illustrative.
 
 ## Phase 18 — CI/CD
 
-- [ ] Headless mode
-- [ ] Stable exit codes
+- [x] Headless mode (CLI)
+- [x] Stable exit codes
 - [ ] GitHub Actions example
 - [ ] GitLab CI example
 - [ ] Jenkins example
@@ -631,15 +649,15 @@ truncation above 64 KiB. Dashboard, suite, and load screens remain illustrative.
 
 ## Phase 20 — Security
 
-- [ ] Secret redaction
-- [ ] Token redaction
-- [ ] Password redaction
+- [-] Secret redaction (CLI implemented; UI and exported reports pending)
+- [-] Token redaction (CLI configured secrets implemented)
+- [-] Password redaction (CLI configured secrets implemented)
 - [x] TLS validation
 - [x] Response-size limit
-- [ ] Request-size limit
+- [-] Request-size limit (desktop drafts limited; engine-wide limit pending)
 - [ ] Parser fuzzing
-- [ ] Invalid UTF-8 handling
-- [ ] malformed JSON handling
+- [-] Invalid UTF-8 handling (desktop previews implemented; broader validation pending)
+- [-] malformed JSON handling (desktop and suite bodies validated; fuzzing pending)
 - [ ] crash recovery
 
 ---

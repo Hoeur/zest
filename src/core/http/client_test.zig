@@ -120,6 +120,23 @@ const Fixture = struct {
 const ok_reply = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nhi";
 const closing_reply = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 2\r\n\r\nhi";
 
+test "oversized timeouts are rejected before starting a request" {
+    var client = Client.init(testing.allocator, io);
+    defer client.deinit();
+    for ([_]u64{ @import("request.zig").max_timeout_ms + 1, std.math.maxInt(u64) }) |ms| {
+        try testing.expectError(error.InvalidTimeout, client.send(testing.failing_allocator, .{ .url = "not a URL", .timeout_ms = ms }));
+    }
+}
+
+test "largest supported timeout completes a real exchange" {
+    var f = try startServer(&.{ok_reply});
+    try f.start();
+    defer f.stop();
+    var buffer: [64]u8 = undefined;
+    const response = try f.send(.{ .url = try f.server.url(&buffer, "/"), .timeout_ms = @import("request.zig").max_timeout_ms });
+    try testing.expectEqual(200, response.status);
+}
+
 fn startServer(replies: []const []const u8) !Fixture {
     return .{ .server = try .listen(replies) };
 }

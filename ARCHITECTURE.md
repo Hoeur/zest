@@ -157,6 +157,13 @@ unless an explicit Content-Type overrides it. Explicit Content-Type headers
 also work without a body and are dropped when a redirect changes the method.
 Plain Enter inserts a newline in multiline editors; Ctrl+Enter sends.
 
+Request/response tabs and the supported body modes are native owner-drawn buttons,
+so they expose keyboard focus and accessible names. API Tests handles Tab and
+Shift+Tab explicitly, skipping hidden and disabled controls; Space activates a
+focused button. Ctrl+1–7 opens the seven sidebar pages. The shared HTTP client
+rejects timeout values above `max_timeout_ms` before starting a worker, and the
+CLI rejects them as usage errors.
+
 ## Planned structure
 
 ZTest's plan is one core engine shared by the CLI, desktop UI and CI/CD.
