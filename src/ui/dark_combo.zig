@@ -68,6 +68,11 @@ fn procedure(handle: win.Handle, message: u32, wparam: usize, lparam: isize, _: 
         _ = DrawTextW(dc, std.unicode.utf8ToUtf16LeStringLiteral("▾"), -1, &arrow_box, 0x25);
         return 0;
     }
+    // A closed selector hands the wheel to the page, so scrolling past one
+    // never quietly changes its value, such as a load test's method.
+    if (message == win.WM_MOUSEWHEEL and win.SendMessageW(handle, win.CB_GETDROPPEDSTATE, 0, 0) == 0) {
+        return win.SendMessageW(win.GetParent(handle), message, wparam, lparam);
+    }
     const result = DefSubclassProc(handle, message, wparam, lparam);
     if (message == win.WM_SETFONT or message == win.CB_SETCURSEL or message == 0x0007 or message == 0x0008 or message == 0x000A) _ = win.InvalidateRect(handle, null, 0);
     return result;

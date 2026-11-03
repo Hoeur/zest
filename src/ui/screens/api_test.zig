@@ -416,7 +416,9 @@ fn drawAssertions(ui: *Ui, r: Rect) void {
     const add_zone: Rect = .{ .x = r.x + 14, .y = r.bottom() - 60, .w = r.w - 28, .h = 46 };
     const top = r.y + 52;
     const row_h: f32 = 82;
-    const capacity: usize = @intFromFloat(@max(1, @floor((add_zone.y - 6 - top) / row_h)));
+    const fits: usize = @intFromFloat(@max(1, @floor((add_zone.y - 6 - top) / row_h)));
+    // Leave room for the "scroll for more" note so it never sits on a row.
+    const capacity: usize = if (rows.len > fits) @intFromFloat(@max(1, @floor((add_zone.y - 26 - top) / row_h))) else fits;
     const offset = @min(ui.state.assert_offset, rows.len -| capacity);
     ui.state.assert_offset = offset;
 

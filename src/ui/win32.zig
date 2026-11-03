@@ -55,7 +55,9 @@ pub const WM_ERASEBKGND = 0x0014;
 pub const WM_SETCURSOR = 0x0020;
 pub const WM_GETMINMAXINFO = 0x0024;
 pub const WM_MOUSEMOVE = 0x0200;
+pub const WM_LBUTTONDOWN = 0x0201;
 pub const WM_LBUTTONUP = 0x0202;
+pub const WM_CAPTURECHANGED = 0x0215;
 pub const WM_MOUSEWHEEL = 0x020A;
 pub const WM_DPICHANGED = 0x02E0;
 pub const WM_COMMAND = 0x0111;
@@ -105,6 +107,14 @@ pub const ES_PASSWORD = 0x0020;
 pub const EM_SETPASSWORDCHAR = 0x00CC;
 pub const WM_APP = 0x8000;
 pub const WM_MOUSELEAVE = 0x02A3;
+pub const TME_LEAVE = 0x0002;
+pub const CB_GETDROPPEDSTATE = 0x0157;
+pub const TrackMouseEventInfo = extern struct {
+    cbSize: u32 = 0,
+    dwFlags: u32 = 0,
+    hwndTrack: Handle = null,
+    dwHoverTime: u32 = 0,
+};
 pub const EN_VSCROLL = 0x0602;
 pub const EM_GETSEL = 0x00B0;
 pub const EM_GETLINECOUNT = 0x00BA;
@@ -219,6 +229,11 @@ pub extern "user32" fn AppendMenuW(menu: Handle, flags: u32, id: usize, text: ?[
 pub extern "user32" fn TrackPopupMenu(menu: Handle, flags: u32, x: i32, y: i32, reserved: i32, hwnd: Handle, rect: ?*const Rect) callconv(.winapi) i32;
 pub extern "user32" fn DestroyMenu(menu: Handle) callconv(.winapi) i32;
 pub extern "user32" fn ClientToScreen(hwnd: Handle, point: *Point) callconv(.winapi) i32;
+pub extern "user32" fn ScreenToClient(hwnd: Handle, point: *Point) callconv(.winapi) i32;
+pub extern "user32" fn GetParent(hwnd: Handle) callconv(.winapi) Handle;
+pub extern "user32" fn SetCapture(hwnd: Handle) callconv(.winapi) Handle;
+pub extern "user32" fn ReleaseCapture() callconv(.winapi) i32;
+pub extern "user32" fn TrackMouseEvent(info: *TrackMouseEventInfo) callconv(.winapi) i32;
 pub extern "user32" fn OpenClipboard(hwnd: Handle) callconv(.winapi) i32;
 pub extern "user32" fn EmptyClipboard() callconv(.winapi) i32;
 pub extern "user32" fn SetClipboardData(format: u32, memory: Handle) callconv(.winapi) Handle;

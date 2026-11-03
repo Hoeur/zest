@@ -47,6 +47,12 @@ var scale: f32 = 1;
 var cursor_arrow: win.Handle = null;
 var cursor_hand: win.Handle = null;
 var want_hand = false;
+/// Set by a press in the window, so a release only clicks after one.
+var mouse_down = false;
+/// Whether the window has asked to hear when the pointer leaves it.
+var tracking_leave = false;
+/// Wheel movement toward the next Assertions row; touchpads send small steps.
+var assert_wheel: i32 = 0;
 var gpa: std.mem.Allocator = undefined;
 var io: Io = undefined;
 var model: Model = undefined;
@@ -292,32 +298,72 @@ fn windowProc(hwnd: win.Handle, msg: u32, wparam: usize, lparam: isize) callconv
             };
             return 0;
         },
-        win.WM_MOUSEMOVE, win.WM_LBUTTONUP => {
+        win.WM_CAPTURECHANGED => {
+            mouse_down = false;
+            return 0;
+        },
+        win.WM_MOUSELEAVE => {
+            tracking_leave = false;
+            input.mouse_x = -1;
+            input.mouse_y = -1;
+            _ = win.InvalidateRect(hwnd, null, 0);
+            return 0;
+        },
+        win.WM_MOUSEMOVE, win.WM_LBUTTONDOWN, win.WM_LBUTTONUP => {
             const bits: u32 = @truncate(@as(usize, @bitCast(lparam)));
             const x: i16 = @bitCast(@as(u16, @truncate(bits)));
             const y: i16 = @bitCast(@as(u16, @truncate(bits >> 16)));
             input.mouse_x = @as(f32, @floatFromInt(x)) / scale;
             input.mouse_y = @as(f32, @floatFromInt(y)) / scale;
-            if (msg == win.WM_LBUTTONUP) {
-                input.clicked = true;
-                input.click_x = input.mouse_x;
-                input.click_y = input.mouse_y;
+            if (!tracking_leave) {
+                // Hover highlights would otherwise stay lit after the pointer leaves.
+                var track: win.TrackMouseEventInfo = .{ .cbSize = @sizeOf(win.TrackMouseEventInfo), .dwFlags = win.TME_LEAVE, .hwndTrack = hwnd };
+                tracking_leave = win.TrackMouseEvent(&track) != 0;
+            }
+            if (msg == win.WM_LBUTTONDOWN) {
+                _ = win.SetCapture(hwnd);
+                mouse_down = true;
+                input.press_x = input.mouse_x;
+                input.press_y = input.mouse_y;
+            } else if (msg == win.WM_LBUTTONUP) {
+                if (mouse_down) {
+                    input.clicked = true;
+                    input.click_x = input.mouse_x;
+                    input.click_y = input.mouse_y;
+                    mouse_down = false;
+                    _ = win.ReleaseCapture();
+                }
             }
             _ = win.InvalidateRect(hwnd, null, 0);
             return 0;
         },
         win.WM_MOUSEWHEEL => {
             const delta: i16 = @bitCast(@as(u16, @truncate(wparam >> 16)));
-            const steps = @as(f32, @floatFromInt(delta)) / 120;
+            // The wheel gives the pointer's place on the screen. The last move
+            // may be stale: fields and selectors take the pointer from the window.
+            const bits: u32 = @truncate(@as(usize, @bitCast(lparam)));
+            var point: win.Point = .{
+                .x = @as(i16, @bitCast(@as(u16, @truncate(bits)))),
+                .y = @as(i16, @bitCast(@as(u16, @truncate(bits >> 16)))),
+            };
+            _ = win.ScreenToClient(hwnd, &point);
+            input.mouse_x = @as(f32, @floatFromInt(point.x)) / scale;
+            input.mouse_y = @as(f32, @floatFromInt(point.y)) / scale;
             if (state.screen == .api_tests) {
                 // Only the Assertions panel scrolls; the editors scroll themselves.
                 var client: win.Rect = .{};
                 _ = win.GetClientRect(hwnd, &client);
                 const panel = @import("screens/api_test.zig").layoutFor(mainArea(client), model.response_expanded).assertions;
-                if (model.response_expanded or !panel.contains(input.mouse_x, input.mouse_y)) return 0;
-                if (steps < 0) state.assert_offset += 1 else state.assert_offset -|= 1;
+                if (model.response_expanded or !panel.contains(input.mouse_x, input.mouse_y)) {
+                    assert_wheel = 0;
+                    return 0;
+                }
+                // One row per notch, however finely the wheel or touchpad reports it.
+                assert_wheel += delta;
+                while (assert_wheel >= 120) : (assert_wheel -= 120) state.assert_offset -|= 1;
+                while (assert_wheel <= -120) : (assert_wheel += 120) state.assert_offset += 1;
             } else {
-                state.scroll -= steps * wheel_step;
+                state.scrollBy(-@as(f32, @floatFromInt(delta)) / 120 * wheel_step);
             }
             _ = win.InvalidateRect(hwnd, null, 0);
             return 0;
@@ -1511,7 +1557,27 @@ fn handleKey(hwnd: win.Handle, msg: *win.Msg) bool {
         return win.IsDialogMessageW(hwnd, msg) != 0;
     }
     if (fields.idOf(focus)) |field| return fieldKey(hwnd, field, msg);
+    if (key_down and !control and scrollKey(msg.wParam)) {
+        _ = win.InvalidateRect(hwnd, null, 0);
+        return true;
+    }
     return false;
+}
+
+/// Page Up and Down, Home, End and the arrows scroll the page when no field
+/// has the keyboard. True when the key was used.
+fn scrollKey(key: usize) bool {
+    const page = @max(wheel_step, state.view_height - 80);
+    switch (key) {
+        0x21 => state.scrollBy(-page), // VK_PRIOR, Page Up
+        0x22 => state.scrollBy(page), // VK_NEXT, Page Down
+        0x24 => state.scrollBy(-state.content_height), // VK_HOME
+        0x23 => state.scrollBy(state.content_height), // VK_END
+        0x26 => state.scrollBy(-wheel_step), // VK_UP
+        0x28 => state.scrollBy(wheel_step), // VK_DOWN
+        else => return false,
+    }
+    return true;
 }
 
 /// Enter and Escape in a page's field. True when the key was used.

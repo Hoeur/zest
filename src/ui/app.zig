@@ -86,6 +86,8 @@ pub const Input = struct {
     /// Where the click landed. The mouse may move again before the repaint.
     click_x: f32 = -1,
     click_y: f32 = -1,
+    press_x: f32 = -1,
+    press_y: f32 = -1,
 };
 
 /// Everything a frame needs, passed down to the screens.
@@ -139,7 +141,8 @@ pub const Ui = struct {
     /// Returns true on the frame `r` is clicked.
     pub fn pressed(ui: *Ui, r: Rect) bool {
         if (ui.hovered(r)) ui.hand = true;
-        const hit = ui.input.clicked and r.contains(ui.input.click_x, ui.input.click_y) and
+        const hit = ui.input.clicked and r.contains(ui.input.press_x, ui.input.press_y) and
+            ui.reachable(ui.input.press_x, ui.input.press_y) and r.contains(ui.input.click_x, ui.input.click_y) and
             ui.reachable(ui.input.click_x, ui.input.click_y);
         if (hit) ui.changed = true;
         return hit;
@@ -176,6 +179,11 @@ pub fn frame(c: *Canvas, s: *state.State, m: *Model, input: Input, width: f32, h
         .h = height - theme.topbar_height,
     };
 
+    // Clamp with the last frame's height first, so a wheel turn or a bigger
+    // window never draws the page past either end.
+    s.clampScroll(s.content_height, main.h);
+    const drawn_scroll = s.scroll;
+
     // The page goes first so the bars paint over anything scrolled beneath them.
     c.clip(main);
     ui.hit_area = main;
@@ -189,6 +197,9 @@ pub fn frame(c: *Canvas, s: *state.State, m: *Model, input: Input, width: f32, h
     ui.hit_area = null;
     c.unclip();
     s.clampScroll(content_height, main.h);
+    // The page got shorter, so this frame was drawn too far down.
+    if (s.scroll != drawn_scroll) ui.changed = true;
+    drawScrollThumb(c, s, main);
 
     drawSidebar(&ui, height);
     drawTopBar(&ui, width);
@@ -204,6 +215,17 @@ pub fn frame(c: *Canvas, s: *state.State, m: *Model, input: Input, width: f32, h
         .placements = ui.placements,
         .placement_count = ui.placement_count,
     };
+}
+
+/// A thin thumb at the page's right edge while the page is taller than the
+/// window, so it is clear there is more below, and where the view is.
+fn drawScrollThumb(c: *Canvas, s: *const state.State, area: Rect) void {
+    const overflow = s.content_height - area.h;
+    if (overflow < 1) return;
+    const track = area.h - 8;
+    const h = @max(32, track * area.h / s.content_height);
+    const y = area.y + 4 + (track - h) * s.scroll / overflow;
+    c.fillRound(.{ .x = area.right() - 8, .y = y, .w = 4, .h = h }, 2, (theme.muted & 0xFFFFFF) | 0x60000000);
 }
 
 fn drawToast(c: *Canvas, text: []const u8, area: Rect) void {

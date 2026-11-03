@@ -99,6 +99,10 @@ pub const State = struct {
     screen: Screen = .dashboard,
     environment: Environment = .production,
     scroll: f32 = 0,
+    /// The page's height and the room it had on the last frame, so a wheel
+    /// turn between frames stops at either end instead of drawing past it.
+    content_height: f32 = 0,
+    view_height: f32 = 0,
 
     request_tab: usize = 3,
     body_type: usize = 0,
@@ -127,11 +131,19 @@ pub const State = struct {
         if (s.screen == screen) return;
         s.screen = screen;
         s.scroll = 0;
+        s.content_height = 0;
     }
 
-    /// Keeps the scroll offset inside the content.
+    /// Keeps the scroll offset inside the content, and remembers its size.
     pub fn clampScroll(s: *State, content_height: f32, view_height: f32) void {
+        s.content_height = content_height;
+        s.view_height = view_height;
         s.scroll = @max(0, @min(s.scroll, content_height - view_height));
+    }
+
+    /// Scrolls by `delta`, stopping at the ends of the last frame's content.
+    pub fn scrollBy(s: *State, delta: f32) void {
+        s.scroll = @max(0, @min(s.scroll + delta, s.content_height - s.view_height));
     }
 };
 
@@ -151,6 +163,21 @@ test "scroll stays inside the content" {
     s.clampScroll(900, 600);
     try testing.expectEqual(@as(f32, 300), s.scroll);
     s.clampScroll(400, 600);
+    try testing.expectEqual(@as(f32, 0), s.scroll);
+}
+
+test "scrolling stops at both ends of the page" {
+    var s: State = .{};
+    s.clampScroll(900, 600);
+    s.scrollBy(1000);
+    try testing.expectEqual(@as(f32, 300), s.scroll);
+    s.scrollBy(-60);
+    try testing.expectEqual(@as(f32, 240), s.scroll);
+    s.scrollBy(-1000);
+    try testing.expectEqual(@as(f32, 0), s.scroll);
+    // A page shorter than the window never scrolls.
+    s.clampScroll(400, 600);
+    s.scrollBy(60);
     try testing.expectEqual(@as(f32, 0), s.scroll);
 }
 
