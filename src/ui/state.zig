@@ -102,6 +102,8 @@ pub const State = struct {
 
     request_tab: usize = 3,
     body_type: usize = 0,
+    /// Index into the Auth tab's types, mirrored from its selector.
+    auth_kind: usize = 0,
     response_tab: usize = 0,
 
     suite: usize = 0,

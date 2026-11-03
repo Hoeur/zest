@@ -1,0 +1,38 @@
+# Setup, teardown, extracted values and secrets.
+# Run with: ZTEST_EXAMPLE_KEY=demo-key ztest run tests/ --env ci
+suite "Session"
+
+var user = "ada"
+
+setup
+  POST {{baseUrl}}/post
+  body { "token": "session-for-{{user}}" }
+  expect status == 200
+  extract secret token = body.json.token
+end
+
+test "The token reaches later requests"
+  GET {{baseUrl}}/anything/me
+  header Authorization Bearer {{token}}
+  expect status == 200
+  expect body.headers.Authorization ends_with "{{user}}"
+end
+
+test "An environment secret is sent but hidden in results"
+  GET {{baseUrl}}/anything/key
+  header X-Api-Key {{apiKey}}
+  expect status == 200
+  expect body.headers.X-Api-Key exists
+end
+
+test "A test var overrides the suite"
+  var user = "grace"
+  GET {{baseUrl}}/anything/{{user}}
+  expect body.url ends_with "/grace"
+end
+
+teardown
+  DELETE {{baseUrl}}/anything/session
+  header Authorization Bearer {{token}}
+  expect status == 200
+end

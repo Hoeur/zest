@@ -16,26 +16,40 @@
   <img src="https://img.shields.io/badge/Zig-powered-F7A41D?logo=zig&logoColor=white" alt="Zig" />
   <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue" alt="Platforms" />
-  <img src="https://img.shields.io/badge/license-TBD-lightgrey" alt="License" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License" />
 </p>
 
 ---
 
 ## 📍 Current State
 
-> **Most of this README describes the planned ZTest product, not what runs today.**
-> `ztest api` sends one HTTP or HTTPS request, prints the response, and can check it with `--assert`. `ztest run` runs `.ztest` files or directories, with environments and masked secrets from `ztest.json`. The load, report, and CI sections below are design targets.
+> **Parts of this README describe the planned product.** What runs today is listed here; the Load Testing UI, history, and cross-platform desktop builds are still design targets.
 
 What exists today:
 
+- **`ztest api`** sends one HTTP or HTTPS request, prints the response, and checks it with `--assert`.
+- **`ztest run`** runs `.ztest` files or directories with setup/teardown, `query` and `auth` statements, extracted values, environments and masked secrets from `ztest.json`. `--report json|junit|html[=path]` writes reports for CI (see [`docs/CI.md`](./docs/CI.md)).
+- **`ztest load`** runs virtual users against one request with ramp-up and an optional rate limit, and prints RPS, failures and p50/p90/p95/p99 latency; `--report json` adds a per-second series.
+- **`ztest init`** writes a starter `ztest.json` and `tests/example.ztest`.
 - **`zest`**: a small unit-test library for Zig, in `src/root.zig`.
-- **Desktop app** (Windows only): `zig build ui` opens the sample dashboard. **API Tests** follows the tabbed request-builder mockup in `ui/`, with a body-type sidebar, environment section, and Response/Assertions columns. Method, URL, and headers are editable; select **Body → raw** and choose **Raw text** or **JSON** to send a body, or **none** to omit it while retaining the draft. Enter headers as one `Name: value` per line. JSON is validated before sending; Ctrl+Enter sends from an editor. Send/Cancel and Body/Headers/Cookies/Raw response views use real data. Authentication controls, environments, assertions, and saving remain planned. Other screens still use sample data or placeholders.
+- **Desktop app** (Windows only): `zig build ui`. **API Tests** is a working request builder: method, URL, **Params** (`name=value` lines), **Headers** (`Name: value` lines), **Auth** (Basic, Bearer, API key in a header or query, with masked keys), **Body** (none, raw text or JSON), and **Tests** (one assertion per line, results in the Assertions panel). Start a Params, Headers or Tests line with `#` to switch it off. `{{variables}}` come from the nearest `ztest.json`; pick the environment in the top bar, and secrets are masked in the variable list and in responses. **Open** and **Save** read and write `.ztest` files, and a suite's tests can be stepped through with the `<` `>` buttons. Dashboard, Test Suites and Load Tests still show sample data.
 
 Desktop keyboard controls: **Ctrl+1–7** opens sidebar pages in order (**Ctrl+2**
 opens API Tests). In API Tests, **Tab/Shift+Tab** moves between visible, enabled
 controls; **Space** activates focused request/response tabs and the None/Raw body
 modes. The format selector uses the arrow keys. **Ctrl+A** selects editor text,
-and **Ctrl+Enter** sends or cancels a request from an editor.
+and **Ctrl+Enter** sends or cancels a request from an editor. **Ctrl+S** saves,
+**Ctrl+Shift+S** saves as, **Ctrl+O** opens, **Ctrl+N** starts a new request, and
+**Ctrl+Page Up/Down** steps through the tests of an open suite.
+
+Quick start:
+
+```bash
+zig build
+zig-out/bin/ztest init my-api && cd my-api
+../zig-out/bin/ztest run tests/ --report html
+../zig-out/bin/ztest load https://httpbin.org/get --users 5 --duration 10s
+```
 
 Using `zest`:
 
@@ -782,27 +796,38 @@ Example:
 ztest load https://api.example.com/products \
   --users 500 \
   --duration 10m \
-  --ramp-up 2m
+  --ramp-up 2m \
+  --assert "status == 200"
 ```
 
-Output:
+Also available: `--rps <n>` to hold all users to a total rate, every `ztest api`
+request flag (`-H`, `--query`, `--json`, `--body`, `--auth`, `--timeout`), and
+`--report json=path` for totals, percentiles and a per-second series. Progress
+prints once a second; Ctrl-C stops early and still prints the results.
+
+Output (illustrative numbers):
 
 ```text
 Load Test Complete
 
-Total Requests      1,245,320
-Successful          1,235,230
-Failed                 10,090
-
-RPS                     2,076
+Total Requests            1245320
+Successful                1235230
+Failed                      10090
+RPS                        2075.5
+Failure Rate                0.81%
+Duration                   600.0s
 
 Average Latency          285 ms
+Min Latency             0.92 ms
 p50                      180 ms
+p90                      402 ms
 p95                      480 ms
 p99                      820 ms
-
-Failure Rate              0.8%
+Max Latency             2210 ms
 ```
+
+Users are capped at 1000 per process, because each user and each request in
+flight runs on its own thread.
 
 ---
 
@@ -886,372 +911,27 @@ Multiple interfaces.
 
 ## 📄 Reports
 
-Planned report formats:
-
-```text
-Console
-JSON
-HTML
-JUnit XML
-```
-
-Examples:
+Formats: console (always), JSON, JUnit XML and a self-contained HTML page.
+Each `--report` writes one file; add `=path` to choose where.
 
 ```bash
 ztest run tests/ --report json
+ztest run tests/ --report junit=reports/junit.xml
+ztest run tests/ --report html=reports/report.html
+ztest load https://api.example.com/health --users 10 --duration 30s --report json=load.json
 ```
 
-```bash
-ztest run tests/ --report junit
-```
-
-```bash
-ztest run tests/ --report html
-```
+Reports hold only masked values, so secrets from `ztest.json` never reach them.
 
 ---
 
 ## 🤖 CI/CD
 
-Example:
-
 ```bash
-ztest run tests/
+ztest run tests/ --env staging --report junit=reports/junit.xml
 ```
 
-Exit codes:
-
-```text
-0 = Success
-1 = Test failure
-2 = Configuration error
-3 = Internal error
-130 = Interrupted by Ctrl-C
-```
-
-Pipeline:
-
-```mermaid
-flowchart LR
-    PUSH[Git Push]
-    BUILD[Build]
-    ZTEST[Run ZTest]
-    PASS{Tests Passed?}
-    DEPLOY[Deploy]
-    STOP[Stop Pipeline]
-
-    PUSH --> BUILD
-    BUILD --> ZTEST
-    ZTEST --> PASS
-
-    PASS -->|Yes| DEPLOY
-    PASS -->|No| STOP
-```
-
----
-
-## ⚙️ Build
-
-### Requirements
-
-Zig 0.17.0 or newer. Check with:
-
-```bash
-zig version
-```
-
-Build:
-
-```bash
-zig build
-```
-
-Tests:
-
-```bash
-zig build test
-```
-
-Run the example tests:
-
-```bash
-zig build demo
-```
-
-Show failure output (these tests fail on purpose):
-
-```bash
-zig build failures
-```
-
-Run the desktop app (Windows only):
-
-```bash
-zig build ui
-```
-
-Release:
-
-```bash
-zig build -Doptimize=ReleaseFast
-```
-
----
-
-## 🛠 Development
-
-The repository has not been published yet. Run the [build commands](#️-build) from the project root.
-
----
-
-## 🧪 Testing Strategy
-
-```mermaid
-flowchart TD
-    UNIT[Unit Tests]
-    INTEGRATION[Integration Tests]
-    E2E[End-to-End Tests]
-    PERF[Performance Tests]
-
-    UNIT --> INTEGRATION
-    INTEGRATION --> E2E
-    E2E --> PERF
-```
-
-Unit testing:
-
-```text
-URL parser
-Variable resolver
-Assertions
-Lexer
-Parser
-Metrics
-Percentiles
-```
-
-Integration:
-
-```text
-HTTP
- ↓
-Response
- ↓
-Assertions
-```
-
-E2E:
-
-```text
-.ztest
- ↓
-Parser
- ↓
-Runner
- ↓
-HTTP
- ↓
-Assertions
- ↓
-Report
-```
-
----
-
-## ⚡ Performance Philosophy
-
-```text
-Correctness
-   ↓
-Measurement
-   ↓
-Profiling
-   ↓
-Optimization
-```
-
-Performance changes should be benchmark-driven.
-
----
-
-## 🧠 Memory Philosophy
-
-```mermaid
-flowchart TD
-    APP[Application Lifetime]
-    GPA[General Allocator]
-
-    REQUEST[Request Lifetime]
-    ARENA[Temporary Arena]
-
-    LOAD[Load Testing]
-    BUFFER[Reusable / Bounded Buffers]
-
-    APP --> GPA
-    REQUEST --> ARENA
-    LOAD --> BUFFER
-```
-
-Goals:
-
-- predictable allocations
-- bounded memory
-- low fragmentation
-- safe ownership
-- easy cleanup
-
----
-
-## 🛡 Security
-
-Security requirements:
-
-- TLS verification
-- token redaction
-- API key masking
-- password redaction
-- secure secret storage
-- request-size limits
-- response-size limits
-- malformed-input handling
-- parser fuzzing
-
----
-
-## 🗺 Roadmap
-
-```mermaid
-timeline
-    title ZTest Development Roadmap
-
-    v0.1 : Foundation
-
-    v0.2 : HTTP Engine
-         : CLI MVP
-
-    v0.3 : Assertions
-         : Test Runner
-         : Suites
-
-    v0.4 : Variables
-         : Extraction
-         : Desktop App
-
-    v0.5 : API Builder
-         : Test Suites UI
-         : History
-
-    v0.6 : Load Engine
-         : Metrics
-         : Percentiles
-
-    v0.7 : Load Testing UI
-         : Charts
-
-    v0.8 : Reports
-         : JUnit
-         : CI/CD
-
-    v1.0 : Stable CLI
-         : Stable Desktop App
-         : Cross-platform Release
-```
-
-Full roadmap:
-
-[`ROADMAP.md`](./ROADMAP.md)
-
----
-
-## 🎯 V1 Scope
-
-```text
-API Testing
-Assertions
-Test Suites
-Environments
-Variables
-Desktop UI
-CLI
-Load Testing
-Reports
-CI/CD
-```
-
-Not part of initial MVP:
-
-```text
-Cloud Sync
-Distributed Load Testing
-Team Workspace
-Plugin Marketplace
-Advanced Protocols
-```
-
----
-
-## 🔮 Future
-
-### Protocols
-
-- WebSocket
-- GraphQL
-- gRPC
-- SSE
-
-### API Development
-
-- OpenAPI import
-- schema validation
-- generated tests
-- contract testing
-- mock server
-
-### Performance
-
-- distributed load testing
-- remote workers
-- multi-machine scenarios
-
-### Extensibility
-
-- plugins
-- custom reporters
-- custom assertions
-- scripting
-- SDK
-
-### Collaboration
-
-- team workspaces
-- shared projects
-- cloud sync
-- shared collections
-
----
-
-## 🤝 Contributing
-
-Before contributing, review:
-
-```text
-TODO.md
-ROADMAP.md
-ARCHITECTURE.md
-```
-
-Potential contribution areas:
-
-- Zig
-- networking
-- HTTP
-- parsers
-- concurrency
-- load testing
-- metrics
-- native UI
-- testing
-- documentation
+Exit codes are stable (`0` passed, `1` failed, `2` configuration error, `3` internal error, `130` interrupted). [`docs/CI.md`](./docs/CI.md) has GitHub Actions, GitLab CI, Jenkins and Azure DevOps examples.
 
 ---
 
@@ -1263,9 +943,11 @@ Potential contribution areas:
 | [`ROADMAP.md`](./ROADMAP.md) | Development roadmap |
 | [`TODO.md`](./TODO.md) | Engineering tasks |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | System architecture |
-| `docs/CLI.md` (planned) | CLI usage |
-| `docs/TEST_FORMAT.md` | `.ztest` format |
-| `docs/LOAD_TESTING.md` (planned) | Load testing |
+| `docs/CLI.md` (planned) | CLI usage; `ztest --help` covers it today |
+| [`docs/TEST_FORMAT.md`](./docs/TEST_FORMAT.md) | `.ztest` format |
+| [`docs/CI.md`](./docs/CI.md) | Running ZTest in CI |
+| [`docs/UI_PLATFORM.md`](./docs/UI_PLATFORM.md) | Cross-platform desktop UI evaluation |
+| [`examples/api/`](./examples/api/) | Runnable example suites and an offline echo server |
 
 ---
 
@@ -1287,7 +969,7 @@ One engine for every interface.
 
 ## 📜 License
 
-License will be defined before the first public release.
+ZTest is released under the [MIT License](LICENSE).
 
 ---
 

@@ -10,6 +10,7 @@ const environment = @import("../core/environment.zig");
 const ast = @import("../core/parser/ast.zig");
 const parser = @import("../core/parser/parser.zig");
 const runner = @import("../core/runner/runner.zig");
+const report = @import("../core/report/report.zig");
 
 const extension = ".ztest";
 const max_file_size: Io.Limit = .limited(16 * 1024 * 1024);
@@ -19,7 +20,16 @@ const File = struct {
     suite: ast.Suite,
 };
 
-pub fn run(context: Context, out: *Io.Writer, paths: []const []const u8, environment_name: ?[]const u8, options: runner.Options) !ExitCode {
+pub const Settings = struct {
+    environment: ?[]const u8 = null,
+    options: runner.Options = .{},
+    reports: []const report.Target = &.{},
+    /// Written into reports.
+    version: []const u8 = "",
+};
+
+pub fn run(context: Context, out: *Io.Writer, paths: []const []const u8, settings: Settings) !ExitCode {
+    const environment_name = settings.environment;
     // Everything is read first, so a typo in the last file sends no requests.
     const files = try loadFiles(context, paths) orelse return .config_error;
     var problem: []const u8 = "";
@@ -33,18 +43,35 @@ pub fn run(context: Context, out: *Io.Writer, paths: []const []const u8, environ
 
     var client: http.Client = .init(context.gpa, context.io);
     defer client.deinit();
-    var engine: runner.Runner = .{ .gpa = context.gpa, .arena = context.arena, .client = &client, .options = options, .variables = variables };
-    var report: Report = .{ .out = out, .color = stdoutColor(context) };
+    var engine: runner.Runner = .{ .gpa = context.gpa, .arena = context.arena, .client = &client, .options = settings.options, .variables = variables };
+    var collector: report.Collector = .{ .arena = context.arena };
+    var console: Console = .{ .out = out, .color = stdoutColor(context), .collector = if (settings.reports.len > 0) &collector else null };
 
+    var timestamp: [20]u8 = undefined;
+    const started_at = report.formatTimestamp(&timestamp, Io.Timestamp.now(context.io, .real).toSeconds());
     if (environment_name) |name| try out.print("Environment: {s}\n", .{name});
     const start: Io.Timestamp = .now(context.io, .awake);
     for (files) |*file| {
         try out.print("{s}: {s}\n", .{ file.path, file.suite.name });
-        report.path = file.path;
-        try engine.runSuite(&file.suite, &report);
+        console.path = file.path;
+        collector.beginSuite(file.path, file.suite.name);
+        try engine.runSuite(&file.suite, &console);
+        try collector.endSuite();
     }
     const summary = engine.summary;
-    try printSummary(out, summary, @intCast(start.untilNow(context.io, .awake).toNanoseconds()));
+    const duration_ns: u64 = @intCast(start.untilNow(context.io, .awake).toNanoseconds());
+    try printSummary(out, summary, duration_ns);
+
+    if (settings.reports.len > 0) {
+        const result = collector.finish(settings.version, started_at, environment_name, duration_ns / std.time.ns_per_ms, summary);
+        for (settings.reports) |target| {
+            writeReport(context, target, result) catch |err| {
+                context.log.err("cannot write {s}: {s}", .{ target.path, @errorName(err) });
+                return .config_error;
+            };
+            try out.print("Report: {s}\n", .{target.path});
+        }
+    }
 
     if (summary.interrupted) return .interrupted;
     if (summary.failed > 0) return .test_failure;
@@ -54,6 +81,18 @@ pub fn run(context: Context, out: *Io.Writer, paths: []const []const u8, environ
         return .config_error;
     }
     return .success;
+}
+
+/// Written next to the console output, so the run is readable either way.
+fn writeReport(context: Context, target: report.Target, result: report.Run) !void {
+    const cwd = Io.Dir.cwd();
+    if (std.fs.path.dirname(target.path)) |dir| try cwd.createDirPath(context.io, dir);
+    var file = try cwd.createFile(context.io, target.path, .{});
+    defer file.close(context.io);
+    var buffer: [4096]u8 = undefined;
+    var writer = file.writerStreaming(context.io, &buffer);
+    try report.write(&writer.interface, target.format, result);
+    try writer.interface.flush();
 }
 
 /// Color is decided per stream, because stdout may be a file when stderr is not.
@@ -143,13 +182,16 @@ fn childPath(arena: Allocator, path: []const u8, name: []const u8) Allocator.Err
     return std.fmt.allocPrint(arena, "{s}/{s}", .{ std.mem.trimEnd(u8, path, "/\\"), name });
 }
 
-/// Prints each case as it ends, so a slow suite shows progress.
-const Report = struct {
+/// Prints each case as it ends, so a slow suite shows progress, and hands it to
+/// the report collector when one is in use.
+const Console = struct {
     out: *Io.Writer,
     color: bool,
     path: []const u8 = "",
+    collector: ?*report.Collector = null,
 
-    pub fn caseFinished(r: *Report, result: runner.CaseResult) !void {
+    pub fn caseFinished(r: *Console, result: runner.CaseResult) !void {
+        if (r.collector) |collector| try collector.caseFinished(result);
         const out = r.out;
         const label, const code = switch (result.status) {
             .passed => .{ "PASS", "\x1b[32m" },
@@ -206,9 +248,9 @@ test "the report shows where and why a case failed" {
 
     var buffer: [256]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var report: Report = .{ .out = &out, .color = false, .path = "a.ztest" };
+    var report_out: Console = .{ .out = &out, .color = false, .path = "a.ztest" };
 
-    try report.caseFinished(.{
+    try report_out.caseFinished(.{
         .case = case,
         .is_hook = false,
         .status = .failed,
@@ -224,7 +266,7 @@ test "the report shows where and why a case failed" {
     , out.buffered());
 
     out.end = 0;
-    try report.caseFinished(.{
+    try report_out.caseFinished(.{
         .case = case,
         .is_hook = false,
         .status = .failed,
@@ -233,7 +275,7 @@ test "the report shows where and why a case failed" {
     try testing.expectEqualStrings("  FAIL T (0ms)\n       a.ztest:3: {{id}} is not defined\n", out.buffered());
 
     out.end = 0;
-    try report.caseFinished(.{ .case = case, .is_hook = false, .status = .skipped });
+    try report_out.caseFinished(.{ .case = case, .is_hook = false, .status = .skipped });
     try testing.expectEqualStrings("  SKIP T\n", out.buffered());
 }
 

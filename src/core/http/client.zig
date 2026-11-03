@@ -27,6 +27,7 @@ pub const Error = Allocator.Error || error{
     TooManyRedirects,
     MalformedResponse,
     ResponseTooLarge,
+    RequestTooLarge,
     RequestFailed,
 };
 
@@ -45,6 +46,7 @@ pub fn describe(err: Error) []const u8 {
         error.TooManyRedirects => "too many redirects",
         error.MalformedResponse => "the server sent a malformed response",
         error.ResponseTooLarge => "the response is larger than the size limit",
+        error.RequestTooLarge => "the request is larger than the size limit",
         error.RequestFailed => "the request failed",
     };
 }
@@ -133,6 +135,7 @@ fn perform(c: *Client, arena: Allocator, request: Request) Error!Response {
     if (http.Client.Protocol.fromUri(uri) == null) return error.UnsupportedScheme;
 
     var hop: Hop = .{ .method = request.method, .uri = uri, .body = try encodeBody(io, arena, request.body) };
+    if (encoding.requestSize(request, hop.body) > request.max_request_size) return error.RequestTooLarge;
     var redirects_left = request.max_redirects;
     const start: Io.Timestamp = .now(io, .awake);
 

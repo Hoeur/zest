@@ -101,7 +101,7 @@ fn addUi(
     });
     exe.subsystem = .windows;
     exe.root_module.addWin32ResourceFile(.{ .file = b.path("src/ui/assets/ztest.rc") });
-    for ([_][]const u8{ "user32", "gdi32", "gdiplus", "dwmapi", "shlwapi", "ole32", "comctl32" }) |lib| {
+    for ([_][]const u8{ "user32", "gdi32", "gdiplus", "dwmapi", "shlwapi", "ole32", "comctl32", "comdlg32" }) |lib| {
         exe.root_module.linkSystemLibrary(lib, .{});
     }
     b.installArtifact(exe);

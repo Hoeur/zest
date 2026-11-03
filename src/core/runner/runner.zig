@@ -228,12 +228,41 @@ const CaseRun = struct {
                 .value = try c.fill(text.value, source.line) orelse return null,
             };
         }
+        const query = try c.arena.alloc(request_model.Param, source.query.len);
+        for (query, source.query) |*param, text| {
+            param.* = .{
+                .name = try c.fill(text.name, source.line) orelse return null,
+                .value = try c.fill(text.value, source.line) orelse return null,
+            };
+        }
         return .{
             .method = source.method,
             .url = try c.fill(source.url, source.line) orelse return null,
+            .query = query,
+            .auth = try c.buildAuth() orelse return null,
             .headers = headers,
             .body = try c.buildBody() orelse return null,
             .timeout_ms = c.case.timeout_ms orelse request_model.default_timeout_ms,
+        };
+    }
+
+    fn buildAuth(c: *CaseRun) Allocator.Error!?request_model.Auth {
+        const line = c.case.request.line;
+        return switch (c.case.request.auth) {
+            .none => .none,
+            .bearer => |token| .{ .bearer = try c.fill(token, line) orelse return null },
+            .basic => |basic| .{ .basic = .{
+                .user = try c.fill(basic.user, line) orelse return null,
+                .password = try c.fill(basic.password, line) orelse return null,
+            } },
+            .api_key_header => |h| .{ .api_key_header = .{
+                .name = try c.fill(h.name, line) orelse return null,
+                .value = try c.fill(h.value, line) orelse return null,
+            } },
+            .api_key_query => |q| .{ .api_key_query = .{
+                .name = try c.fill(q.name, line) orelse return null,
+                .value = try c.fill(q.value, line) orelse return null,
+            } },
         };
     }
 

@@ -1,0 +1,40 @@
+# Requests, headers, bodies and the assertion operators.
+suite "Basics"
+
+test "Query parameters arrive"
+  GET {{baseUrl}}/get?page=2&sort=name
+  expect status == 200
+  expect header.content-type contains "json"
+  expect body.args.page == "2"
+  expect body.args.sort starts_with "na"
+  expect body.missing not_exists
+end
+
+test "A JSON body is sent with its content type"
+  POST {{baseUrl}}/post
+  body { "name": "Apple", "tags": ["fruit", "red"], "price": 1.5 }
+  expect status == 200
+  expect body.headers.Content-Type == "application/json"
+  expect body.json.tags[1] == "red"
+  expect body.json.price > 1
+  expect body.json.price <= 1.5
+end
+
+test "A raw body is sent as written"
+  PUT {{baseUrl}}/put
+  header Content-Type text/plain
+  body "line one\nline two"
+  expect status == 200
+  expect body.data contains "line two"
+end
+
+test "Error statuses are results, not failures"
+  GET {{baseUrl}}/status/404
+  expect status == 404
+  expect status != 200
+end
+
+test "Not written yet"
+  skip
+  DELETE {{baseUrl}}/delete
+end

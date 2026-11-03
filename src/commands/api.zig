@@ -45,7 +45,7 @@ pub fn run(context: Context, out: *Io.Writer, request: Request, assertions: []co
 /// finish the exchange leaves here as non-zero.
 fn exitCode(err: http.Error) ExitCode {
     return switch (err) {
-        error.InvalidUrl, error.UnsupportedScheme, error.InvalidHeader, error.InvalidTimeout => .config_error,
+        error.InvalidUrl, error.UnsupportedScheme, error.InvalidHeader, error.InvalidTimeout, error.RequestTooLarge => .config_error,
         error.Interrupted => .interrupted,
         error.OutOfMemory => .internal_error,
         else => .test_failure,

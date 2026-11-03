@@ -1,9 +1,9 @@
 # Architecture
 
 This folder holds **zest**, a Zig unit-test library, and the early **ZTest** CLI
-and desktop UI. The HTTP engine, assertions, `.ztest` parser, `ztest api` and
-`ztest run` work, including environments and secrets. Load testing in `ROADMAP.md`
-and `TODO.md` is planned and not yet built.
+and desktop UI. The HTTP engine, assertions, `.ztest` parser and writer, reports,
+the load engine, and `ztest api`, `run`, `load` and `init` work, including
+environments and secrets. The desktop's API Tests page is functional on Windows.
 
 ## Layout
 
@@ -19,10 +19,14 @@ src/core/          logger, config, environments, secret masking, context, exit
                    codes and Ctrl-C handling
 src/core/http/     request model, response model and client
 src/core/assertions/  assertion model and parser, evaluation and reports
-src/core/parser/   .ztest lexer, parser and AST
+src/core/parser/   .ztest lexer, parser, AST and writer
 src/core/runner/   suite execution and {{variable}} replacement
-src/ui/            ZTest desktop UI, in progress
-examples/          demo.zig passes; failures.zig fails on purpose
+src/core/report/   run results kept for JSON, JUnit and HTML reports
+src/core/load/     load engine: virtual users, rate limit, histograms
+src/core/fuzz_test.zig  fuzz and seeded-mutation tests for untrusted input
+src/ui/            ZTest desktop UI (Windows), in progress
+examples/          demo.zig passes; failures.zig fails on purpose;
+                   api/ holds runnable .ztest suites and an echo server
 ui/, docs/assets/  ZTest desktop mockups
 ```
 
@@ -59,7 +63,8 @@ ui/, docs/assets/  ZTest desktop mockups
 - **Output:** command results go to stdout and diagnostics to stderr. Both use
   streaming writers, because a positional writer overwrites redirected output.
 - **Allocators:** commands use the process arena from `Context`, which is freed
-  on exit. Long-running work such as load tests will need its own strategy.
+  on exit. The load engine uses the general allocator, with an arena per user
+  that is reset after every request.
 
 ## HTTP engine
 
@@ -75,6 +80,9 @@ ui/, docs/assets/  ZTest desktop mockups
   part of the first URL only.
 - **Memory:** a response lives in the arena passed to `send`. Reuse one `Client`
   to reuse connections.
+- **Limits:** responses stop at `max_response_size` and requests at
+  `max_request_size` (32 MiB of URL, headers and encoded body), checked before
+  connecting.
 - **Tests** run against scripted servers on loopback, so they need no network.
   HTTPS is checked by hand, because a local test would need a trusted certificate.
 
@@ -108,6 +116,9 @@ into the `Suite` in `ast.zig`.
 - **`expect` reuses the assertion parser**, so a file and `--assert` cannot drift apart.
 - **Text is checked late where it holds variables.** URLs and JSON bodies are only
   valid once `{{name}}` is replaced, so the runner must check them.
+- **`writer.zig` writes a `Suite` back** to text that parses to the same values,
+  and refuses what the format cannot hold rather than writing something else.
+  The desktop saves through it. Fuzz tests check the round trip.
 - **The first error stops parsing.** Line numbers are kept on the AST, so the
   runner can report them too.
 
@@ -126,16 +137,40 @@ own listener. Run semantics are in `docs/TEST_FORMAT.md`.
   variable may come from an earlier failed `extract`, so it is not treated as a
   usage error. Mistakes the parser can find are exit code `2`.
 - **One `Client` serves the whole run,** so connections are reused between files.
+- **Reports** are a second listener: `report.Collector` copies each case, already
+  redacted, and `commands/run.zig` writes JSON, JUnit or HTML after the run.
+
+## Load engine
+
+`load.Engine` starts one task per virtual user. Each user owns an HTTP client,
+so connections are reused per user, and its own `Stats`, so the request loop
+takes no locks. Only live counters and the per-second series are shared, as
+atomics. `finish` joins the users and merges their statistics.
+
+- **Ramp-up** spreads user start times evenly. **`--rps`** hands out time slots
+  from one atomic counter, so the total rate holds whatever the user count.
+- **Latency** goes into a fixed-size log-linear histogram (about 1.5% precision,
+  exact below 128 µs), so percentiles cost no memory per request.
+- **Users are capped at 1000**, because each user and each request in flight
+  runs on a thread of `std.Io.Threaded`.
+- **Ctrl-C** stops new requests; requests in flight finish or time out, and the
+  partial results are printed.
 
 ## Desktop API requests
 
 The Windows API Tests page sends requests through the same HTTP engine as the
-CLI, with editable method, URL, headers, and None/Raw/JSON body modes.
-`ui/api_controls.zig` owns native controls for editing,
+CLI, with editable method, URL, params, headers, auth, None/Raw/JSON body modes
+and assertions. `ui/api_controls.zig` owns native controls for editing,
 clipboard, keyboard focus, and scrolling; `ui/screens/api_test.zig` owns their
-shared layout and paints response metadata. It shows actual responses rather
-than the dashboard's sample data. Auth controls, saved tests,
-assertions, and environment selection remain future UI work.
+shared layout and paints response metadata, variables and assertion results.
+
+`ui/workspace.zig` holds what the page works on besides the request: the
+`ztest.json` found in the open file's folder or the nearest parent, the chosen
+environment, and the open `.ztest` file. It has no Win32 code and is tested with
+the CLI tests. Saving over an open suite replaces only the edited test and keeps
+hooks, variables and other tests; stepping between tests keeps edits in memory
+until the save. Main-window actions that open dialogs are posted as a message
+and run after painting, so no modal loop runs inside `WM_PAINT`.
 
 `ui/api_request.zig` snapshots each request into an arena and runs it on an
 `Io.concurrent` task. The UI polls an atomic completion flag on a 50 ms timer;
@@ -146,8 +181,11 @@ Each manual Send starts a fresh connection pool to avoid expired idle sockets.
 Requests use a 30-second timeout and a 4 MiB response limit; text previews show
 up to 64 KiB of source text, mark truncation, and handle invalid UTF-8 safely.
 
-`core/http/draft.zig` validates text headers and JSON before execution, then
-copies all request data into the request arena. Duplicate headers and colons
+`core/http/draft.zig` replaces `{{variables}}`, then validates text headers,
+parameters, auth, assertions and JSON before execution, and copies all request
+data into the request arena. Lines starting with `#` are switched off. It also
+converts a draft to and from an `ast.Case` for saving and opening. Secret
+variable values are hidden in previews and assertion results. Duplicate headers and colons
 inside values are preserved. Content-Length and Transfer-Encoding are managed
 by the HTTP client. Header errors include line numbers without printing values.
 Drafts are limited to 32 KiB of headers and 256 KiB of body text; native editors

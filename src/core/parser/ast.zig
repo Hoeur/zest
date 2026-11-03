@@ -48,6 +48,9 @@ pub const Request = struct {
     headers: []const request.Header,
     body: Body,
     line: usize,
+    /// Added to the URL, encoded, after variables are replaced.
+    query: []const request.Param = &.{},
+    auth: request.Auth = .none,
 };
 
 pub const Body = union(enum) {

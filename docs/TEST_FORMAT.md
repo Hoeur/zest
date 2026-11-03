@@ -61,12 +61,14 @@ teardown   = "teardown" EOL { hook-item } "end" EOL ;
 test       = "test" string EOL { test-item } "end" EOL ;
 
 test-item  = hook-item | "skip" EOL | "disabled" EOL ;
-hook-item  = blank | variable | timeout | request | header | body | expect | extract ;
+hook-item  = blank | variable | timeout | request | header | query | auth | body | expect | extract ;
 
 variable   = "var" [ "secret" ] name "=" ( string | number | "true" | "false" ) EOL ;
 timeout    = "timeout" time EOL ;
 request    = METHOD text EOL ;
 header     = "header" word text EOL ;
+query      = "query" word [ text ] EOL ;
+auth       = "auth" ( "basic" word text | "bearer" text | "header" word text | "query" word text ) EOL ;
 body       = "body" ( json-block | string ) EOL ;
 expect     = "expect" assertion EOL ;
 extract    = "extract" [ "secret" ] name "=" target EOL ;
@@ -88,7 +90,7 @@ json-block = a balanced { } or [ ] block, which may span lines ;
 - A suite needs at least one test, so a file that runs nothing cannot pass in CI.
 - A suite has at most one `setup` and one `teardown`, which can appear anywhere.
 - Every test, `setup` and `teardown` must send exactly one request and close with `end`.
-- A test has at most one `body`. `skip` and `disabled` are for tests only.
+- A test has at most one `body` and one `auth`. `skip` and `disabled` are for tests only.
 - Statements inside a test can be in any order.
 
 ## Statements
@@ -105,6 +107,23 @@ Without one, a request has 30 seconds.
 
 **`header`** takes a name, then the rest of the line as the value. There is no
 colon after the name. Repeat it for more headers.
+
+**`query`** adds a parameter to the URL: a name, then the rest of the line as
+the value, which may be empty. Both are percent-encoded after variables are
+replaced, so `query q hello world` sends `?q=hello%20world`. Repeat it for more
+parameters. Parameters already written in the URL are sent as they are.
+
+**`auth`** adds credentials, with the last part taking the rest of the line:
+
+```text
+auth basic {{user}} {{password}}
+auth bearer {{token}}
+auth header X-Api-Key {{apiKey}}
+auth query api_key {{apiKey}}
+```
+
+`basic` and `bearer` set the `Authorization` header. Credentials are dropped when
+a redirect changes the scheme, host or port.
 
 **`body`** is either JSON or a quoted string:
 
@@ -141,8 +160,8 @@ not run or count it.
 
 ## Variables
 
-`{{name}}` is replaced in URLs, header names and values, bodies and quoted
-`expect` values.
+`{{name}}` is replaced in URLs, header names and values, `query` and `auth`
+parts, bodies and quoted `expect` values.
 
 - Lookup order is extracted values, then the test's `var`, the suite's, the
   chosen environment's, and the global ones in `ztest.json`.
@@ -219,6 +238,14 @@ error sends no requests.
 | `3` | Internal error |
 | `130` | Interrupted by Ctrl-C |
 
+## Writing files
+
+The desktop app saves requests with `src/core/parser/writer.zig`, which writes a
+suite that parses back to the same values. It does not keep comments or blank
+lines, and refuses what the format cannot hold, such as an empty header value, a
+value that starts or ends with a space, or a JSON body that is not one object or
+array.
+
 ## Errors
 
 The parser stops at the first problem and reports its line and a message, so a
@@ -226,6 +253,5 @@ caller can print `tests/login.ztest:12: this body is never closed`.
 
 ## Not in the format yet
 
-Query parameters and cookies go in the URL and a `header`. There is no `auth`
-statement, or form or multipart body. A JSON key
+Cookies go in a `header`. There is no form or multipart body. A JSON key
 containing `.` or `[` cannot be named in a path.

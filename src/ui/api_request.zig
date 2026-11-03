@@ -5,6 +5,9 @@ const Io = std.Io;
 const http = @import("../core/http/client.zig");
 const model = @import("../core/http/request.zig");
 const Response = @import("../core/http/response.zig").Response;
+const Assertion = @import("../core/assertions/assertion.zig").Assertion;
+pub const evaluate = @import("../core/assertions/evaluate.zig");
+const redact = @import("../core/redact.zig").redact;
 pub const draft = @import("../core/http/draft.zig");
 
 pub const methods = [_]model.Method{ .GET, .POST, .PUT, .PATCH, .DELETE, .HEAD, .OPTIONS };
@@ -23,6 +26,11 @@ pub const Session = struct {
     input_message: ?[]const u8 = null,
     arena: ?std.heap.ArenaAllocator = null,
     request: model.Request = .{ .url = "" },
+    assertions: []const Assertion = &.{},
+    /// Checked by the worker against the response. Empty without assertions.
+    results: []const evaluate.Result = &.{},
+    /// Hidden in previews, messages and assertion results.
+    secrets: []const []const u8 = &.{},
     future: ?Io.Future(void) = null,
     done: std.atomic.Value(bool) = .init(false),
     canceled: std.atomic.Value(bool) = .init(false),
@@ -59,19 +67,22 @@ pub const Session = struct {
         s.response = null;
         s.failure = null;
         s.input_message = null;
+        s.results = &.{};
+        s.assertions = &.{};
+        s.secrets = &.{};
         s.phase = .idle;
         if (s.arena) |*arena| arena.deinit();
         s.arena = .init(s.gpa);
         errdefer s.phase = .failed;
         const allocator = s.arena.?.allocator();
         var diagnostic: draft.Diagnostic = .{};
-        s.request = draft.prepare(allocator, source, &diagnostic) catch |err| {
-            s.input_message = if (diagnostic.line > 0)
-                std.fmt.allocPrint(allocator, "Header line {d}: {s}", .{ diagnostic.line, draft.describe(err) }) catch draft.describe(err)
-            else
-                draft.describe(err);
+        const prepared = draft.prepareAll(allocator, source, &diagnostic) catch |err| {
+            s.input_message = draft.message(allocator, err, diagnostic) catch draft.describe(err);
             return err;
         };
+        s.request = prepared.request;
+        s.assertions = prepared.assertions;
+        s.secrets = prepared.secrets;
         s.request.timeout_ms = timeout_ms;
         s.request.max_response_size = 4 * 1024 * 1024;
         s.done.store(false, .release);
@@ -106,10 +117,22 @@ pub const Session = struct {
 
     fn work(s: *Session) void {
         defer s.done.store(true, .release);
-        s.response = s.client.sendCancelable(s.arena.?.allocator(), s.request, &s.canceled) catch |err| {
+        const allocator = s.arena.?.allocator();
+        const response = s.client.sendCancelable(allocator, s.request, &s.canceled) catch |err| {
             s.failure = err;
             return;
         };
+        if (s.assertions.len > 0) {
+            s.results = evaluate.evaluate(allocator, response, s.assertions, s.secrets) catch &.{};
+        }
+        s.response = response;
+    }
+
+    /// Counts for the Assertions panel, or null before a response.
+    pub fn assertionCounts(s: *const Session) ?struct { passed: usize, failed: usize } {
+        if (s.phase != .completed or s.results.len == 0) return null;
+        const failed = evaluate.countFailed(s.results);
+        return .{ .passed = s.results.len - failed, .failed = failed };
     }
 
     pub fn message(s: *const Session) []const u8 {
@@ -126,6 +149,16 @@ pub const Session = struct {
     /// The caller owns the preview. Bound text passed to the native edit control,
     /// normalize newlines, and replace embedded control characters safely.
     pub fn preview(s: *const Session, allocator: std.mem.Allocator, view: View) ![]const u8 {
+        if (s.secrets.len == 0) return s.previewText(allocator, view);
+        // Secrets from the environment can come back in a response, such as
+        // an echoed token, so they are hidden from every view.
+        var scratch: std.heap.ArenaAllocator = .init(allocator);
+        defer scratch.deinit();
+        const text = try s.previewText(scratch.allocator(), view);
+        return allocator.dupe(u8, try redact(scratch.allocator(), text, s.secrets));
+    }
+
+    fn previewText(s: *const Session, allocator: std.mem.Allocator, view: View) ![]const u8 {
         if (s.phase != .completed) return allocator.dupe(u8, s.message());
         const response = s.response.?;
         var out: Io.Writer.Allocating = .init(allocator);

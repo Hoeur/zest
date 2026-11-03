@@ -1,0 +1,14 @@
+{
+  "variables": {
+    "baseUrl": "https://httpbin.org"
+  },
+  "environments": {
+    "local": {
+      "baseUrl": "http://127.0.0.1:8080"
+    },
+    "ci": {
+      "baseUrl": "http://127.0.0.1:8080",
+      "apiKey": { "env": "ZTEST_EXAMPLE_KEY" }
+    }
+  }
+}

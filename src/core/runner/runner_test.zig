@@ -508,3 +508,42 @@ test "a secret stays hidden in later suites" {
     );
     try testing.expectEqualStrings("body.token == \"********\"", f.seen()[1].actual);
 }
+
+test "query and auth statements use variables and reach the wire" {
+    var f: Fixture = .{ .server = try .listen(&.{ok_reply}) };
+    try f.start(.{});
+    defer f.stop();
+
+    try f.runSource(
+        \\suite "S"
+        \\var term = "a b"
+        \\var secret token = "t0k"
+        \\test "query and bearer"
+        \\GET {{base}}/find
+        \\query q {{term}}
+        \\query page 2
+        \\auth bearer {{token}}
+        \\expect status == 200
+        \\end
+    );
+    try f.expectStatuses(&.{.passed});
+    try testing.expect(std.mem.startsWith(u8, f.received(), "GET /find?q=a%20b&page=2 HTTP/1.1\r\n"));
+    try testing.expect(std.mem.find(u8, f.received(), "authorization: Bearer t0k\r\n") != null);
+}
+
+test "a missing variable in auth fails the case without sending it" {
+    var f: Fixture = .{ .server = try .listen(&.{}) };
+    try f.start(.{});
+    defer f.stop();
+
+    try f.runSource(
+        \\suite "S"
+        \\test "basic"
+        \\GET {{base}}/
+        \\auth basic ada {{password}}
+        \\end
+    );
+    try f.expectStatuses(&.{.failed});
+    try testing.expectEqualStrings("{{password}} is not defined", f.seen()[0].failure.?);
+    try testing.expectEqual(0, f.sent());
+}

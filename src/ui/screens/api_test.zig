@@ -4,12 +4,27 @@ const Ui = @import("../app.zig").Ui;
 const Rect = @import("../layout.zig").Rect;
 const theme = @import("../theme.zig");
 const widgets = @import("../widgets.zig");
+const draft = @import("../../core/http/draft.zig");
 
-pub const Controls = struct { method: Rect, url: Rect, send: Rect, headers: Rect, body_kind: Rect, body: Rect, response: Rect };
+pub const Controls = struct {
+    method: Rect,
+    url: Rect,
+    send: Rect,
+    params: Rect,
+    headers: Rect,
+    auth_kind: Rect,
+    auth_name: Rect,
+    auth_value: Rect,
+    body_kind: Rect,
+    body: Rect,
+    tests: Rect,
+    response: Rect,
+};
 pub const Layout = struct { request: Rect, content: Rect, editor: Rect, variables: Rect, response: Rect, assertions: Rect };
 pub const request_tab_labels = .{ "Params", "Headers", "Auth", "Body", "Tests" };
 pub const response_tab_labels = .{ "Body", "Headers", "Cookies", "Raw" };
 pub const body_mode_labels = .{ "none", "raw" };
+pub const auth_kinds = std.enums.values(draft.AuthKind);
 
 /// Native tab buttons use the same positions as the painted tab underline.
 pub fn requestTabs(area: Rect) [5]Rect {
@@ -61,18 +76,39 @@ pub fn layout(area: Rect) Layout {
     };
 }
 
+/// Rows of the Auth tab: the type selector, then the two fields.
+pub fn authRows(content: Rect) [3]Rect {
+    const step = @min(40, content.h / 3);
+    const h = @min(28, step - 4);
+    const x = content.x + 140;
+    const w = @min(420, content.w - 150);
+    return .{
+        .{ .x = x, .y = content.y, .w = @min(220, w), .h = h },
+        .{ .x = x, .y = content.y + step, .w = w, .h = h },
+        .{ .x = x, .y = content.y + 2 * step, .w = w, .h = h },
+    };
+}
+
 /// The painted panels and real controls share exactly the same geometry.
 pub fn controls(area: Rect) Controls {
     const l = layout(area);
     const method: Rect = .{ .x = l.request.x + 18, .y = l.request.y + 48, .w = 116, .h = 40 };
     const send: Rect = .{ .x = l.request.right() - 124, .y = method.y, .w = 106, .h = method.h };
+    // Params, Headers and Tests share one editor area below a hint line.
+    const text_editor: Rect = .{ .x = l.content.x + 8, .y = l.content.y + 28, .w = l.content.w - 16, .h = l.content.h - 28 };
+    const auth = authRows(l.content);
     return .{
         .method = .{ .x = method.x + 7, .y = method.y + 7, .w = method.w - 14, .h = 26 },
         .url = .{ .x = method.right() + 12, .y = method.y + 7, .w = send.x - method.right() - 26, .h = 26 },
         .send = send,
-        .headers = .{ .x = l.content.x + 8, .y = l.content.y + 28, .w = l.content.w - 16, .h = l.content.h - 28 },
+        .params = text_editor,
+        .headers = text_editor,
+        .auth_kind = auth[0],
+        .auth_name = auth[1],
+        .auth_value = auth[2],
         .body_kind = .{ .x = l.editor.x, .y = l.content.y, .w = 110, .h = 30 },
         .body = l.editor.inset(8),
+        .tests = text_editor,
         .response = .{ .x = l.response.x + 18, .y = l.response.y + 120, .w = l.response.w - 36, .h = @max(30, l.response.h - 136) },
     };
 }
@@ -84,16 +120,33 @@ pub fn draw(ui: *Ui, area: Rect) f32 {
     const x = l.request.x;
     const w = l.request.w;
     const y = area.y + 14;
-    c.text(.small, "API Tests", .{ .x = x, .y = y, .w = 200, .h = 20 }, .left, theme.muted);
-    c.text(.title, "Untitled - API Test", .{ .x = x, .y = y + 20, .w = w - 260, .h = 44 }, .left, theme.text);
-    c.text(.body, "Build a request and inspect its response.", .{ .x = x, .y = y + 66, .w = w, .h = 22 }, .left, theme.muted);
-    widgets.disabledButton(c, .{ .x = x + w - 230, .y = y + 24, .w = 90, .h = 38 }, "Save", false);
-    widgets.disabledButton(c, .{ .x = x + w - 130, .y = y + 24, .w = 130, .h = 38 }, "Run Test", true);
+    var title_buffer: [160]u8 = undefined;
+    const file_name = ui.workspace.fileName();
+    c.text(.small, if (file_name) |name| name else "API Tests", .{ .x = x, .y = y, .w = w - 360, .h = 20 }, .left, theme.muted);
+    const title = std.fmt.bufPrint(&title_buffer, "{s} - API Test", .{ui.workspace.title()}) catch "API Test";
+    const count = ui.workspace.testCount();
+    const switcher_w: f32 = if (count > 1) 150 else 0;
+    c.text(.title, title, .{ .x = x, .y = y + 20, .w = w - 360 - switcher_w, .h = 44 }, .left, theme.text);
+    if (count > 1) {
+        // A suite holds several tests; these step through them.
+        const box: Rect = .{ .x = x + w - 360 - switcher_w, .y = y + 26, .w = switcher_w - 12, .h = 34 };
+        const index = if (ui.workspace.file) |file| file.test_index + 1 else 1;
+        const label = std.fmt.bufPrint(title_buffer[100..], "{d} of {d}", .{ index, count }) catch "";
+        if (widgets.button(ui, .{ .x = box.x, .y = box.y, .w = 32, .h = box.h }, "<", false) and !ui.api.busy()) ui.action = .previous_test;
+        c.text(.small, label, .{ .x = box.x + 34, .y = box.y, .w = box.w - 68, .h = box.h }, .center, theme.text);
+        if (widgets.button(ui, .{ .x = box.right() - 32, .y = box.y, .w = 32, .h = box.h }, ">", false) and !ui.api.busy()) ui.action = .next_test;
+    }
+    const status = if (ui.workspace.message.len > 0) ui.workspace.message else "Build a request and inspect its response. Ctrl+S saves, Ctrl+O opens.";
+    const status_color = if (std.mem.startsWith(u8, status, "Not saved") or std.mem.startsWith(u8, status, "Cannot")) theme.red else theme.muted;
+    c.text(.body, status, .{ .x = x, .y = y + 66, .w = w, .h = 22 }, .left, status_color);
+    if (widgets.button(ui, .{ .x = x + w - 340, .y = y + 24, .w = 90, .h = 38 }, "Open", false)) ui.action = .open;
+    if (widgets.button(ui, .{ .x = x + w - 240, .y = y + 24, .w = 90, .h = 38 }, "Save", false)) ui.action = .save;
+    if (widgets.button(ui, .{ .x = x + w - 140, .y = y + 24, .w = 140, .h = 38 }, if (ui.api.busy()) "Cancel" else "Run Test", true)) ui.action = .send;
 
     widgets.panel(c, l.request);
     c.text(.heading, "Request", .{ .x = x + 18, .y = l.request.y + 10, .w = 150, .h = 28 }, .left, theme.text);
-    widgets.disabledButton(c, .{ .x = x + w - 330, .y = l.request.y + 9, .w = 145, .h = 28 }, "Code Snippets", false);
-    widgets.disabledButton(c, .{ .x = x + w - 174, .y = l.request.y + 9, .w = 156, .h = 28 }, "Save as Test", false);
+    if (widgets.button(ui, .{ .x = x + w - 284, .y = l.request.y + 9, .w = 110, .h = 28 }, "New", false)) ui.action = .new;
+    if (widgets.button(ui, .{ .x = x + w - 164, .y = l.request.y + 9, .w = 146, .h = 28 }, "Save as Test...", false)) ui.action = .save_as;
     const method_frame: Rect = .{ .x = boxes.method.x - 7, .y = boxes.method.y - 7, .w = boxes.method.w + 14, .h = 40 };
     c.fillRound(method_frame, 8, theme.background);
     c.strokeRound(method_frame, 8, theme.border);
@@ -102,20 +155,40 @@ pub fn draw(ui: *Ui, area: Rect) f32 {
     c.strokeRound(url_frame, 8, theme.border);
     c.line(x + 18, l.request.y + 134, x + w - 18, l.request.y + 134, theme.border, 1);
     switch (ui.state.request_tab) {
-        0 => note(ui, l.content, "Query Parameters", "Add query parameters directly to the URL above."),
-        1 => c.text(.small, "One Name: value per line. Duplicate headers are preserved.", .{ .x = l.content.x + 8, .y = l.content.y, .w = l.content.w - 16, .h = 22 }, .left, theme.muted),
-        2 => note(ui, l.content, "Authentication", "Use the Headers tab to supply authentication headers."),
+        0 => hint(ui, l.content, "One name=value per line, added to the URL encoded. Start a line with # to switch it off."),
+        1 => hint(ui, l.content, "One Name: value per line. Duplicates are kept. Start a line with # to switch it off."),
+        2 => drawAuth(ui, l.content),
         3 => drawBody(ui, l),
-        else => note(ui, l.content, "Assertions", "Assertion editing is planned. Responses are shown below."),
+        else => hint(ui, l.content, "One assertion per line, such as status == 200, body.id exists or response_time < 500ms."),
     }
     drawResponse(ui, l.response);
     drawAssertions(ui, l.assertions);
     return area.h;
 }
 
-fn note(ui: *Ui, r: Rect, heading: []const u8, text: []const u8) void {
-    ui.c.text(.strong, heading, .{ .x = r.x + 10, .y = r.y + 12, .w = r.w - 20, .h = 28 }, .left, theme.text);
-    ui.c.text(.body, text, .{ .x = r.x + 10, .y = r.y + 48, .w = r.w - 20, .h = 26 }, .left, theme.muted);
+fn hint(ui: *Ui, r: Rect, text: []const u8) void {
+    ui.c.text(.small, text, .{ .x = r.x + 8, .y = r.y, .w = r.w - 16, .h = 22 }, .left, theme.muted);
+}
+
+fn drawAuth(ui: *Ui, content: Rect) void {
+    const c = ui.c;
+    const rows = authRows(content);
+    const kind = auth_kinds[@min(ui.state.auth_kind, auth_kinds.len - 1)];
+    const labels = kind.fields();
+    c.text(.small, "Type", .{ .x = content.x + 8, .y = rows[0].y, .w = 120, .h = rows[0].h }, .left, theme.text);
+    for (labels, rows[1..]) |label, row| {
+        const text = label orelse continue;
+        c.text(.small, text, .{ .x = content.x + 8, .y = row.y, .w = 128, .h = row.h }, .left, theme.text);
+        const frame: Rect = .{ .x = row.x - 6, .y = row.y - 2, .w = row.w + 12, .h = row.h + 4 };
+        c.fillRound(frame, 6, theme.background);
+        c.strokeRound(frame, 6, theme.border);
+    }
+    const note_x = rows[0].right() + 18;
+    const note: []const u8 = if (kind == .none)
+        "No credentials are sent."
+    else
+        "Keys are masked. Use {{variables}} from ztest.json to keep them out of saved files.";
+    c.text(.small, note, .{ .x = note_x, .y = rows[0].y, .w = content.right() - note_x, .h = rows[0].h }, .left, theme.muted);
 }
 
 fn drawBody(ui: *Ui, l: Layout) void {
@@ -134,14 +207,39 @@ fn drawBody(ui: *Ui, l: Layout) void {
     }
     c.fillRound(l.editor, 8, theme.background);
     c.strokeRound(l.editor, 8, theme.border);
-    const vars = l.variables;
+    drawVariables(ui, l.variables);
+}
+
+/// The values `{{name}}` takes with the chosen environment, secrets masked.
+fn drawVariables(ui: *Ui, vars: Rect) void {
+    const c = ui.c;
     c.text(.strong, "Environment Variables", .{ .x = vars.x + 8, .y = vars.y, .w = vars.w - 8, .h = 28 }, .left, theme.text);
-    const row_h = @min(42, (vars.h - 36) / 3);
-    for ([_][]const u8{ "{{baseUrl}}", "{{apiKey}}", "{{env}}" }, 0..) |label, i| {
-        const row: Rect = .{ .x = vars.x + 8, .y = vars.y + 34 + @as(f32, @floatFromInt(i)) * row_h, .w = vars.w - 8, .h = row_h - 6 };
-        c.fillRound(row, 8, theme.raised);
-        c.text(.mono, label, .{ .x = row.x + 8, .y = row.y, .w = row.w * 0.52, .h = row.h }, .left, theme.key);
-        c.text(.small, "Not set", .{ .x = row.x + row.w * 0.55, .y = row.y, .w = row.w * 0.4, .h = row.h }, .left, theme.muted);
+    if (ui.workspace.config_problem) |problem| {
+        c.text(.small, problem, .{ .x = vars.x + 8, .y = vars.y + 34, .w = vars.w - 8, .h = 40 }, .left, theme.red);
+        return;
+    }
+    var buffer: [16 * 1024]u8 = undefined;
+    var fixed: std.heap.FixedBufferAllocator = .init(&buffer);
+    const shown = ui.workspace.shownVariables(fixed.allocator()) catch &.{};
+    if (shown.len == 0) {
+        c.text(.small, "None. Add variables to ztest.json", .{ .x = vars.x + 8, .y = vars.y + 34, .w = vars.w - 8, .h = 24 }, .left, theme.muted);
+        c.text(.small, "beside your .ztest file.", .{ .x = vars.x + 8, .y = vars.y + 56, .w = vars.w - 8, .h = 24 }, .left, theme.muted);
+        return;
+    }
+    const row_h: f32 = 30;
+    const capacity: usize = @intFromFloat(@max(1, @floor((vars.h - 34) / row_h)));
+    var name_buffer: [80]u8 = undefined;
+    for (shown, 0..) |item, i| {
+        if (i + 1 == capacity and shown.len > capacity) {
+            const more = std.fmt.bufPrint(&name_buffer, "+{d} more", .{shown.len - i}) catch "";
+            c.text(.small, more, .{ .x = vars.x + 8, .y = vars.y + 34 + @as(f32, @floatFromInt(i)) * row_h, .w = vars.w - 8, .h = row_h - 4 }, .left, theme.muted);
+            break;
+        }
+        const row: Rect = .{ .x = vars.x + 8, .y = vars.y + 34 + @as(f32, @floatFromInt(i)) * row_h, .w = vars.w - 8, .h = row_h - 4 };
+        c.fillRound(row, 6, theme.raised);
+        const name = std.fmt.bufPrint(&name_buffer, "{{{{{s}}}}}", .{item.name}) catch item.name;
+        c.text(.mono, name, .{ .x = row.x + 8, .y = row.y, .w = row.w * 0.48, .h = row.h }, .left, theme.key);
+        c.text(.small, item.value, .{ .x = row.x + row.w * 0.5, .y = row.y, .w = row.w * 0.48, .h = row.h }, .left, theme.muted);
     }
 }
 
@@ -166,13 +264,50 @@ fn drawAssertions(ui: *Ui, r: Rect) void {
     const c = ui.c;
     widgets.panel(c, r);
     c.text(.heading, "Assertions", .{ .x = r.x + 18, .y = r.y + 10, .w = r.w - 36, .h = 28 }, .left, theme.text);
-    const row_h = @min(88, (r.h - 90) / 3);
-    for ([_]struct { label: []const u8, value: []const u8 }{ .{ .label = "Status code", .value = "equals  200" }, .{ .label = "Response time", .value = "less than  500 ms" }, .{ .label = "Body property", .value = "exists  body.token" } }, 0..) |item, i| {
-        const row: Rect = .{ .x = r.x + 14, .y = r.y + 46 + @as(f32, @floatFromInt(i)) * row_h, .w = r.w - 28, .h = row_h - 6 };
-        c.strokeRound(row, 8, theme.border);
-        c.circle(row.x + 16, row.y + row.h / 2, 6, theme.border);
-        c.text(.small, item.label, .{ .x = row.x + 32, .y = row.y, .w = row.w * 0.43, .h = row.h }, .left, theme.text);
-        c.text(.small, item.value, .{ .x = row.x + row.w * 0.53, .y = row.y, .w = row.w * 0.44, .h = row.h }, .left, theme.muted);
+    var buffer: [96]u8 = undefined;
+    const add: Rect = .{ .x = r.x + 14, .y = r.bottom() - 38, .w = r.w - 28, .h = 26 };
+    defer if (widgets.button(ui, add, if (ui.state.request_tab == 4) "Edit assertions above" else "Edit Assertions", false)) {
+        ui.action = .edit_tests;
+    };
+
+    const counts = ui.api.assertionCounts() orelse {
+        const text: []const u8 = if (ui.api.phase == .completed)
+            "No assertions ran. Add them in the Tests tab."
+        else
+            "Assertions in the Tests tab run on every response.";
+        c.text(.small, text, .{ .x = r.x + 18, .y = r.y + 46, .w = r.w - 36, .h = 26 }, .left, theme.muted);
+        return;
+    };
+    const summary = std.fmt.bufPrint(&buffer, "{d} passed, {d} failed", .{ counts.passed, counts.failed }) catch "";
+    widgets.pill(c, .{ .x = r.right() - 150, .y = r.y + 12, .w = 132, .h = 24 }, summary, if (counts.failed == 0) theme.green else theme.red, if (counts.failed == 0) theme.green_dim else theme.red_dim);
+
+    const results = ui.api.results;
+    const top = r.y + 46;
+    const bottom = add.y - 8;
+    const capacity: usize = @intFromFloat(@max(1, @floor((bottom - top) / 42)));
+    // Failures first, because they are what the user needs to read.
+    var shown: usize = 0;
+    for ([_]bool{ false, true }) |want| {
+        for (results) |result| {
+            if (result.passed != want) continue;
+            if (shown == capacity) break;
+            const row: Rect = .{ .x = r.x + 14, .y = top + @as(f32, @floatFromInt(shown)) * 42, .w = r.w - 28, .h = 38 };
+            c.strokeRound(row, 8, theme.border);
+            widgets.outcomeBadge(c, row.x + 16, row.y + row.h / 2, 8, if (result.passed) .passed else .failed);
+            const text_x = row.x + 32;
+            const text_w = row.w - 40;
+            if (result.passed) {
+                c.text(.mono, result.assertion.text, .{ .x = text_x, .y = row.y, .w = text_w, .h = row.h }, .left, theme.text);
+            } else {
+                c.text(.mono, result.assertion.text, .{ .x = text_x, .y = row.y + 2, .w = text_w, .h = 18 }, .left, theme.text);
+                const actual = std.fmt.bufPrint(&buffer, "Actual: {s}", .{result.actual}) catch result.actual;
+                c.text(.small, actual, .{ .x = text_x, .y = row.y + 19, .w = text_w, .h = 17 }, .left, theme.red);
+            }
+            shown += 1;
+        }
     }
-    widgets.disabledButton(c, .{ .x = r.x + 14, .y = r.bottom() - 38, .w = r.w - 28, .h = 26 }, "Add Assertion (planned)", true);
+    if (shown < results.len) {
+        const more = std.fmt.bufPrint(&buffer, "+{d} more", .{results.len - shown}) catch "";
+        c.text(.small, more, .{ .x = r.x + 18, .y = bottom - 20, .w = r.w - 36, .h = 20 }, .left, theme.muted);
+    }
 }

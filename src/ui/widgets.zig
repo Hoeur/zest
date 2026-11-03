@@ -64,6 +64,22 @@ pub fn disabledButton(c: *Canvas, r: Rect, label: []const u8, primary: bool) voi
     }
 }
 
+/// A button that works. Returns true on the frame it is clicked.
+pub fn button(ui: *Ui, r: Rect, label: []const u8, primary: bool) bool {
+    const c = ui.c;
+    const clicked = ui.pressed(r);
+    const hot = ui.hovered(r);
+    if (primary) {
+        c.fillRound(r, 8, if (hot) theme.key else theme.amber);
+        c.text(.strong, label, r, .center, theme.on_amber);
+    } else {
+        if (hot) c.fillRound(r, 8, theme.raised);
+        c.strokeRound(r, 8, if (hot) theme.amber else theme.border);
+        c.text(.body, label, r, .center, theme.text);
+    }
+    return clicked;
+}
+
 /// Read-only box with text, as an input or dropdown will look once editable.
 pub fn field(c: *Canvas, r: Rect, label: []const u8, dropdown: bool) void {
     c.fillRound(r, 8, theme.background);

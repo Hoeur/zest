@@ -467,6 +467,27 @@ test "bad requests fail before connecting" {
     }));
 }
 
+test "a request over the size limit fails before connecting" {
+    var client: Client = .init(testing.allocator, io);
+    defer client.deinit();
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+
+    // Port 1 is closed, so reaching the network would fail differently.
+    const body: [64]u8 = @splat('x');
+    try testing.expectError(error.RequestTooLarge, client.send(arena.allocator(), .{
+        .url = "http://127.0.0.1:1/",
+        .method = .POST,
+        .body = .{ .raw = &body },
+        .max_request_size = 80,
+    }));
+    try testing.expectError(error.RequestTooLarge, client.send(arena.allocator(), .{
+        .url = "http://127.0.0.1:1/",
+        .headers = &.{.{ .name = "X-Big", .value = &body }},
+        .max_request_size = 64,
+    }));
+}
+
 test "a kept-alive connection is reused" {
     var f = try startServer(&.{ ok_reply, ok_reply });
     try f.start();

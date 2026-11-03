@@ -106,6 +106,25 @@ keyboard focus indicator. Windows scrollbars remain a visible fidelity differenc
   tree also passed its build/tests. Separate local API/formatting changes remain
   excluded from this UI commit.
 
+## Functional slice — 2026-11-03
+
+Params, Auth, Tests, environments, Open/Save and the suite test switcher were
+added inside the existing layout: the Params and Tests editors use the Headers
+editor's area and hint line, and Auth uses labelled rows in the request content
+area. The Assertions panel now lists real results, failures first, and the
+Environment Variables column lists the chosen environment's values with secrets
+masked. Open, Save, Run Test, New and Save as Test are now real buttons.
+
+Checked by driving `ztest-ui.exe` under Wine with a virtual display: switching
+environments, typing params, choosing Bearer auth (key masked), editing
+assertions, saving a new `.ztest`, opening a three-test suite from `tests/`
+(its `ztest.json` found in the parent folder), stepping to test 2, and the
+missing-secret message on Send. Wine has no Segoe fonts, so the canvas now falls
+back to generic families instead of failing to start; icons render as boxes
+there. Wine cannot run the engine's sockets, so live sends were verified by the
+loopback session tests on Linux rather than in the window. **A pass on real
+Windows is still needed** for the native look, Rich Edit colours and live sends.
+
 ## Remaining polish
 
 - P3: native scrollbar styling can be brought closer to the mockup.

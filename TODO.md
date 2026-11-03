@@ -11,6 +11,27 @@
 
 ---
 
+## Review Follow-up — 2026-11-03
+
+- [x] Add an MIT `LICENSE`
+- [x] Add runnable example suites (`examples/api/`) and an offline echo server
+- [x] Add GitHub Actions CI: format, tests on Windows/Linux/macOS, example suites, a short load test
+- [x] Let `--help` and `--version` win anywhere on the command line
+- [x] Add `ztest init`
+- [x] Add `--report json|junit|html[=path]` to `ztest run`
+- [x] Add `query` and `auth` statements to `.ztest`, and a writer that round-trips with the parser
+- [x] Desktop: Params, Auth, environments with masked secrets, live assertions, Open/Save, stepping through a suite's tests
+- [x] Add `ztest load` with users, ramp-up, rate limit, percentiles and a JSON report
+- [x] Fuzz the parser, writer, assertions, drafts, config and templates; add an engine-wide request-size limit
+- [x] Evaluate cross-platform desktop UI (`docs/UI_PLATFORM.md`)
+
+Next: run the dvui spike from `docs/UI_PLATFORM.md`, then the Test Suites screen on
+the runner, the Load Tests screen on `load.Engine`, history, and release packaging.
+Smaller gaps: form-urlencoded and multipart bodies (core supports them, the format
+and desktop do not), proxy support, and scenario load tests from a `.ztest` suite.
+
+---
+
 ## Review Follow-up — 2026-10-31
 
 - [x] Reject oversized CLI and core HTTP timeouts without panicking
@@ -19,23 +40,19 @@
 - [x] Normalize source formatting with Zig 0.17
 - [x] Complete native request interaction verification after the keyboard changes
 - [x] Compare the mockup and implementation; preserve visual QA evidence in `design-qa.md`
-- [ ] Connect desktop auth and environment variables to the shared core
-- [ ] Add live assertion editing and evaluation
-- [ ] Save and reopen `.ztest` requests
-
-The next feature slice is desktop auth/environment integration. Suite management,
-history, load testing, exported reports, CI examples, and release packaging follow
-in the phases below. `ztest init` from the roadmap is also still unimplemented.
+- [x] Connect desktop auth and environment variables to the shared core
+- [x] Add live assertion editing and evaluation
+- [x] Save and reopen `.ztest` requests
 
 ---
 
 ## Phase 0 — Repository Setup
 
-- [-] Create repository
+- [x] Create repository
 - [x] Initialize Zig project
 - [x] Add `.gitignore`
 - [x] Add `README.md`
-- [ ] Add `LICENSE`
+- [x] Add `LICENSE`
 - [x] Add `ROADMAP.md`
 - [x] Add `ARCHITECTURE.md`
 - [x] Add `TODO.md`
@@ -307,10 +324,10 @@ ztest run tests/
 ### Secrets
 
 - [x] Secret flag
-- [ ] Mask UI
+- [x] Mask UI
 - [x] Mask CLI
 - [x] Mask logs
-- [ ] Mask reports
+- [x] Mask reports
 - [x] Secure local storage strategy
 
 ---
@@ -347,7 +364,7 @@ Tests sends real requests with editable headers and None/Raw/JSON bodies.
 ### Integration
 
 - [x] Windows Win32/GDI+ integration
-- [ ] Evaluate cross-platform GUI support, including zgui compatibility
+- [x] Evaluate cross-platform GUI support, including zgui compatibility (`docs/UI_PLATFORM.md`)
 - [x] Create application window
 - [x] Render loop
 - [-] Keyboard input (API controls and Ctrl+1–7 page navigation implemented)
@@ -372,7 +389,7 @@ Tests sends real requests with editable headers and None/Raw/JSON bodies.
 
 - [x] Sidebar routing
 - [x] Dashboard route (sample data)
-- [x] API Tests route (live requests; remaining features below)
+- [x] API Tests route (live requests, auth, environments, assertions, save/open)
 - [x] Test Suites route (sample data)
 - [x] Load Tests route (sample data)
 - [x] Reports route (placeholder)
@@ -389,28 +406,28 @@ Tests sends real requests with editable headers and None/Raw/JSON bodies.
 - [x] URL input
 - [x] Send button
 - [x] Cancel pending request without blocking the window
-- [ ] Save button
+- [x] Save button (Save, Save as, Open, New; Ctrl+S/O/N)
 
 ### Params
 
-- [ ] key
-- [ ] value
-- [ ] enable/disable
-- [ ] delete row
+- [x] key (one `name=value` per line)
+- [x] value
+- [x] enable/disable (a leading `#` switches a line off)
+- [x] delete row
 
 ### Headers
 
 - [x] key (one `Name: value` per line)
 - [x] value
-- [ ] enable/disable
-- [ ] secret mask
+- [x] enable/disable (a leading `#` switches a line off)
+- [-] secret mask (secret variables are masked in the variable list and responses; a literal value typed in a header is shown)
 
 ### Auth
 
-- [ ] No Auth
-- [ ] Basic Auth
-- [ ] Bearer Token
-- [ ] API Key
+- [x] No Auth
+- [x] Basic Auth
+- [x] Bearer Token
+- [x] API Key (header or query; keys are masked unless written as `{{variable}}`)
 
 ### Body
 
@@ -434,28 +451,32 @@ Tests sends real requests with editable headers and None/Raw/JSON bodies.
 
 - [x] Editable request headers and raw/JSON body
 - [x] Validate JSON and header lines before sending; retain body drafts across modes
-- [ ] Connect auth and environment variables to the core models
-- [ ] Evaluate assertions against the live response
-- [ ] Save and reopen `.ztest` requests
+- [x] Connect auth and environment variables to the core models
+- [x] Evaluate assertions against the live response
+- [x] Save and reopen `.ztest` requests
 
 The live response viewer supports text selection, copying, and scrolling.
 Requests have a 30-second timeout and a 4 MiB response limit; previews mark
-truncation above 64 KiB. Dashboard, suite, and load screens remain illustrative.
+truncation above 64 KiB. `ztest.json` is read from the open file's folder or the
+nearest parent. Dashboard, suite, and load screens remain illustrative.
 
 ---
 
 ## Phase 11 — Assertions UI
 
-- [ ] Add assertion button
-- [ ] Assertion type selector
-- [ ] Operator selector
-- [ ] Expected value
-- [ ] Actual value
-- [ ] Passed state
-- [ ] Failed state
-- [ ] Delete assertion
-- [ ] Duplicate assertion
-- [ ] Reorder assertions
+Assertions are edited as text in the Tests tab, one per line, which covers
+adding, deleting, duplicating and reordering. Results show failures first.
+
+- [x] Add assertion button (Edit Assertions focuses the Tests editor)
+- [ ] Assertion type selector (typed today)
+- [ ] Operator selector (typed today)
+- [x] Expected value
+- [x] Actual value
+- [x] Passed state
+- [x] Failed state
+- [x] Delete assertion
+- [x] Duplicate assertion
+- [x] Reorder assertions
 
 ---
 
@@ -518,47 +539,47 @@ truncation above 64 KiB. Dashboard, suite, and load screens remain illustrative.
 
 ### Configuration
 
-- [ ] Virtual users
-- [ ] Duration
-- [ ] Ramp-up
-- [ ] Target RPS
-- [ ] Timeout
+- [x] Virtual users
+- [x] Duration
+- [x] Ramp-up
+- [x] Target RPS
+- [x] Timeout
 
 ### Execution
 
-- [ ] Worker system
-- [ ] Scheduler
-- [ ] Connection reuse
-- [ ] Graceful cancellation
-- [ ] Rate limiter
-- [ ] Scenario runner
+- [x] Worker system (one task per user)
+- [x] Scheduler (shared rate-limit slots)
+- [x] Connection reuse (one client per user)
+- [x] Graceful cancellation (Ctrl-C prints partial results)
+- [x] Rate limiter
+- [ ] Scenario runner (one request today; a `.ztest` suite per user is next)
 
 ### Reliability
 
-- [ ] Avoid thread explosion
-- [ ] Bound memory usage
+- [x] Avoid thread explosion (at most 1000 users)
+- [x] Bound memory usage (per-request arenas, fixed-size histograms)
 - [ ] Backpressure
-- [ ] Connection limits
+- [x] Connection limits (one connection per user)
 
 ---
 
 ## Phase 15 — Load Metrics
 
-- [ ] Total requests
-- [ ] Successful requests
-- [ ] Failed requests
-- [ ] RPS
-- [ ] average latency
-- [ ] minimum latency
-- [ ] maximum latency
-- [ ] p50
-- [ ] p90
-- [ ] p95
-- [ ] p99
-- [ ] failure rate
-- [ ] active VUs
-- [ ] bytes received
-- [ ] bytes sent
+- [x] Total requests
+- [x] Successful requests
+- [x] Failed requests
+- [x] RPS
+- [x] average latency
+- [x] minimum latency
+- [x] maximum latency
+- [x] p50
+- [x] p90
+- [x] p95
+- [x] p99
+- [x] failure rate
+- [x] active VUs
+- [x] bytes received
+- [x] bytes sent (estimated from the request line, headers and body)
 
 ---
 
@@ -604,20 +625,20 @@ truncation above 64 KiB. Dashboard, suite, and load screens remain illustrative.
 ## Phase 17 — Reporting
 
 - [x] Console reporter
-- [ ] JSON reporter
-- [ ] HTML reporter
-- [ ] JUnit reporter
+- [x] JSON reporter
+- [x] HTML reporter
+- [x] JUnit reporter
 
 ### Report Data
 
-- [ ] application version
-- [ ] test timestamp
-- [ ] test environment
-- [ ] tests
-- [ ] assertions
-- [ ] failures
-- [ ] durations
-- [ ] load metrics
+- [x] application version
+- [x] test timestamp
+- [x] test environment
+- [x] tests
+- [x] assertions
+- [x] failures
+- [x] durations
+- [x] load metrics (`ztest load --report json`)
 
 ---
 
@@ -625,11 +646,11 @@ truncation above 64 KiB. Dashboard, suite, and load screens remain illustrative.
 
 - [x] Headless mode (CLI)
 - [x] Stable exit codes
-- [ ] GitHub Actions example
-- [ ] GitLab CI example
-- [ ] Jenkins example
-- [ ] Azure DevOps example
-- [ ] CI documentation
+- [x] GitHub Actions example (also this repository's own CI)
+- [x] GitLab CI example
+- [x] Jenkins example
+- [x] Azure DevOps example
+- [x] CI documentation (`docs/CI.md`)
 
 ---
 
@@ -649,15 +670,15 @@ truncation above 64 KiB. Dashboard, suite, and load screens remain illustrative.
 
 ## Phase 20 — Security
 
-- [-] Secret redaction (CLI implemented; UI and exported reports pending)
-- [-] Token redaction (CLI configured secrets implemented)
-- [-] Password redaction (CLI configured secrets implemented)
+- [x] Secret redaction (CLI, desktop and reports)
+- [x] Token redaction (configured and extracted secrets)
+- [x] Password redaction (configured secrets; desktop auth fields are masked)
 - [x] TLS validation
 - [x] Response-size limit
-- [-] Request-size limit (desktop drafts limited; engine-wide limit pending)
-- [ ] Parser fuzzing
+- [x] Request-size limit (32 MiB in the engine; desktop drafts smaller)
+- [x] Parser fuzzing (`src/core/fuzz_test.zig`)
 - [-] Invalid UTF-8 handling (desktop previews implemented; broader validation pending)
-- [-] malformed JSON handling (desktop and suite bodies validated; fuzzing pending)
+- [x] malformed JSON handling (desktop and suite bodies validated and fuzzed)
 - [ ] crash recovery
 
 ---
@@ -685,15 +706,15 @@ truncation above 64 KiB. Dashboard, suite, and load screens remain illustrative.
 
 ZTest V1 must provide:
 
-- [ ] API testing
-- [ ] CLI
-- [ ] desktop application
-- [ ] assertions
-- [ ] reusable test suites
-- [ ] variables
-- [ ] environments
-- [ ] load testing
-- [ ] metrics
-- [ ] reports
-- [ ] CI integration
+- [x] API testing
+- [x] CLI
+- [-] desktop application (Windows API Tests works; suites, load and other platforms pending)
+- [x] assertions
+- [x] reusable test suites
+- [x] variables
+- [x] environments
+- [-] load testing (CLI done; desktop screen and scenarios pending)
+- [x] metrics
+- [x] reports
+- [x] CI integration
 - [ ] cross-platform releases

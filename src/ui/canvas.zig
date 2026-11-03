@@ -46,6 +46,8 @@ pub const Canvas = struct {
     path: win.Handle = null,
     format: win.Handle = null,
     families: [3]win.Handle = @splat(null),
+    /// Generic families belong to GDI+ and are not deleted.
+    generic: [3]bool = @splat(false),
     fonts: [@typeInfo(Font).@"enum".field_names.len]win.Handle = @splat(null),
     logo: win.Handle = null,
 
@@ -73,8 +75,13 @@ pub const Canvas = struct {
             std.unicode.utf8ToUtf16LeStringLiteral("Segoe MDL2 Assets"),
             std.unicode.utf8ToUtf16LeStringLiteral("Consolas"),
         };
-        for (names, &c.families) |name, *family| {
-            try check(win.GdipCreateFontFamilyFromName(name, null, family));
+        // A missing font, such as on a trimmed Windows image or under Wine,
+        // falls back to a generic family rather than stopping the app.
+        for (names, &c.families, 0..) |name, *family, i| {
+            if (win.GdipCreateFontFamilyFromName(name, null, family) == 0) continue;
+            family.* = null;
+            try check(if (i == 2) win.GdipGetGenericFontFamilyMonospace(family) else win.GdipGetGenericFontFamilySansSerif(family));
+            c.generic[i] = true;
         }
         for (&c.fonts, 0..) |*font, i| {
             const spec = @as(Font, @fromBackingInt(@intCast(i))).spec();
@@ -87,7 +94,7 @@ pub const Canvas = struct {
         for (c.fonts) |font| if (font != null) {
             _ = win.GdipDeleteFont(font);
         };
-        for (c.families) |family| if (family != null) {
+        for (c.families, c.generic) |family, generic| if (family != null and !generic) {
             _ = win.GdipDeleteFontFamily(family);
         };
         if (c.format != null) _ = win.GdipDeleteStringFormat(c.format);

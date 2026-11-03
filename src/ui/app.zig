@@ -12,6 +12,11 @@ const suites = @import("screens/suites.zig");
 const load_test = @import("screens/load_test.zig");
 const placeholder = @import("screens/placeholder.zig");
 const Session = @import("api_request.zig").Session;
+const Workspace = @import("workspace.zig").Workspace;
+
+/// Work a click asks for that needs the window, such as a file dialog. The
+/// frame only records it, and the window runs it after painting.
+pub const Action = enum(usize) { none, send, open, save, save_as, new, edit_tests, previous_test, next_test };
 
 pub const Input = struct {
     mouse_x: f32 = -1,
@@ -27,7 +32,9 @@ pub const Ui = struct {
     c: *Canvas,
     state: *state.State,
     api: *Session,
+    workspace: *Workspace,
     input: Input,
+    action: Action = .none,
     /// Set when the pointer is over something clickable.
     hand: bool = false,
     /// Set when a click changed state, so the frame must be redrawn.
@@ -58,6 +65,7 @@ pub const Ui = struct {
 pub const Result = struct {
     hand: bool,
     changed: bool,
+    action: Action = .none,
 };
 
 const nav = [_]struct { screen: state.Screen, icon: []const u8 }{
@@ -70,8 +78,8 @@ const nav = [_]struct { screen: state.Screen, icon: []const u8 }{
     .{ .screen = .settings, .icon = theme.icon.settings },
 };
 
-pub fn frame(c: *Canvas, s: *state.State, api: *Session, input: Input, width: f32, height: f32) Result {
-    var ui: Ui = .{ .c = c, .state = s, .api = api, .input = input };
+pub fn frame(c: *Canvas, s: *state.State, api: *Session, workspace: *Workspace, input: Input, width: f32, height: f32) Result {
+    var ui: Ui = .{ .c = c, .state = s, .api = api, .workspace = workspace, .input = input };
     const main: Rect = .{
         .x = theme.sidebar_width,
         .y = theme.topbar_height,
@@ -95,7 +103,7 @@ pub fn frame(c: *Canvas, s: *state.State, api: *Session, input: Input, width: f3
 
     drawSidebar(&ui, height);
     drawTopBar(&ui, width);
-    return .{ .hand = ui.hand, .changed = ui.changed };
+    return .{ .hand = ui.hand, .changed = ui.changed, .action = ui.action };
 }
 
 fn drawSidebar(ui: *Ui, height: f32) void {
@@ -133,25 +141,30 @@ fn drawTopBar(ui: *Ui, width: f32) void {
     c.fill(bar, theme.background);
     c.line(bar.x, bar.bottom(), bar.right(), bar.bottom(), theme.border, 1);
 
-    const environment: Rect = .{ .x = bar.right() - 215, .y = 14, .w = 165, .h = 38 };
+    const environment: Rect = .{ .x = bar.right() - 245, .y = 14, .w = 195, .h = 38 };
     const search: Rect = .{ .x = bar.x + theme.page_margin, .y = 14, .w = @min(680, environment.x - bar.x - theme.page_margin * 2), .h = 38 };
     c.strokeRound(search, 8, theme.border);
     c.text(.icon, theme.icon.search, .{ .x = search.x + 14, .y = search.y, .w = 20, .h = search.h }, .left, theme.muted);
     c.text(.body, "Search tests, suites, or endpoints...", .{ .x = search.x + 42, .y = search.y, .w = search.w - 56, .h = search.h }, .left, theme.muted);
 
-    const direct = ui.state.screen == .api_tests;
-    if (!direct and ui.pressed(environment)) {
-        ui.state.environment = ui.state.environment.next();
+    // API Tests uses the real environments from ztest.json; other pages
+    // still show sample data, so they keep the sample selector.
+    const live = ui.state.screen == .api_tests;
+    if (ui.pressed(environment)) {
+        if (live) ui.workspace.cycleEnvironment() else ui.state.environment = ui.state.environment.next();
     }
-    if (!direct and ui.hovered(environment)) c.fillRound(environment, 8, theme.raised);
+    if (ui.hovered(environment)) c.fillRound(environment, 8, theme.raised);
     c.strokeRound(environment, 8, theme.border);
-    const dot = if (direct) theme.blue else switch (ui.state.environment) {
+    const dot = if (live)
+        (if (ui.workspace.config_problem != null) theme.red else if (ui.workspace.selected != null) theme.green else theme.blue)
+    else switch (ui.state.environment) {
         .production => theme.green,
         .staging, .development => theme.amber,
     };
     c.circle(environment.x + 20, environment.y + 19, 5, dot);
-    c.text(.body, if (direct) "Direct URL" else ui.state.environment.label(), .{ .x = environment.x + 36, .y = environment.y, .w = 100, .h = environment.h }, .left, theme.text);
-    if (!direct) c.text(.icon, theme.icon.chevron_down, .{ .x = environment.right() - 30, .y = environment.y, .w = 18, .h = environment.h }, .left, theme.muted);
+    const label = if (live) ui.workspace.environmentName() else ui.state.environment.label();
+    c.text(.body, label, .{ .x = environment.x + 36, .y = environment.y, .w = environment.w - 70, .h = environment.h }, .left, theme.text);
+    c.text(.icon, theme.icon.chevron_down, .{ .x = environment.right() - 30, .y = environment.y, .w = 18, .h = environment.h }, .left, theme.muted);
 
     c.text(.icon, theme.icon.bell, .{ .x = bar.right() - 42, .y = 14, .w = 28, .h = 38 }, .center, theme.text);
 }

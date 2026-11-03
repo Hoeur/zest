@@ -31,7 +31,7 @@ Use descriptive Zig `test "behavior"` blocks with `std.testing`, colocated with 
 
 ## Commit & Pull Request Guidelines
 
-History currently contains only `init zest`; no established commit format exists. Write concise imperative subjects and keep commits focused. PRs should describe behavior changes, link relevant issues, list validation commands/results, and include screenshots for UI changes. Keep `.zig-cache/` and `zig-out/` out of commits.
+Commits use short imperative subjects, such as `Add desktop request header and body editors`. Write concise imperative subjects and keep commits focused. PRs should describe behavior changes, link relevant issues, list validation commands/results, and include screenshots for UI changes. Keep `.zig-cache/` and `zig-out/` out of commits.
 
 ## Security & Configuration
 

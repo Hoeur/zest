@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 const assertion = @import("core/assertions/assertion.zig");
 const Assertion = assertion.Assertion;
 const Level = @import("core/log.zig").Level;
+const report = @import("core/report/report.zig");
 const request_model = @import("core/http/request.zig");
 const Auth = request_model.Auth;
 const Header = request_model.Header;
@@ -17,6 +18,8 @@ pub const help =
     \\Usage: ztest [options]
     \\       ztest api <method> <url> [api options]
     \\       ztest run <file or directory>... [run options]
+    \\       ztest load [method] <url> [api options] [load options]
+    \\       ztest init [directory]
     \\
     \\Options:
     \\  -h, --help       Show this help
@@ -40,10 +43,25 @@ pub const help =
     \\Run options:
     \\      --fail-fast              Stop after the first failure
     \\  -e, --env <name>             Use an environment from ztest.json
+    \\      --report <format[=path]>  Also write a json, junit or html report,
+    \\                               repeatable (default ztest-report.<ext>)
+    \\
+    \\Load options:
+    \\  -u, --users <n>              Virtual users (default 10, at most 1000)
+    \\  -d, --duration <time>        How long to run, such as 30s or 5m (default 10s)
+    \\      --ramp-up <time>         Start users evenly over this time
+    \\      --rps <n>                Hold all users to this many requests a second
+    \\      --report json[=path]     Also write the results as JSON
+    \\  API options apply, except --raw. --assert marks a response as failed.
+    \\
+    \\Times take ms, s, m or h, such as 500ms, 30s, 5m or 1h.
+    \\
+    \\Init:
+    \\  Creates ztest.json and tests/example.ztest, keeping files that exist.
     \\
 ;
 
-pub const Command = enum { help, version, api, run };
+pub const Command = enum { help, version, api, run, init, load };
 
 pub const Options = struct {
     command: Command = .help,
@@ -58,6 +76,18 @@ pub const Options = struct {
     paths: []const []const u8 = &.{},
     fail_fast: bool = false,
     environment: ?[]const u8 = null,
+    reports: []const report.Target = &.{},
+    /// Set when `command` is `init`.
+    directory: []const u8 = ".",
+    /// Set when `command` is `load`, with `request` and `assertions`.
+    load: Load = .{},
+};
+
+pub const Load = struct {
+    users: u32 = 10,
+    duration_ms: u64 = 10_000,
+    ramp_up_ms: u64 = 0,
+    rps: u32 = 0,
 };
 
 pub const ParseError = Allocator.Error || error{
@@ -75,13 +105,19 @@ pub fn parse(arena: Allocator, args: []const [:0]const u8, bad_arg: *[]const u8)
     var options: Options = .{};
     var api: ApiArgs = .{};
     var paths: std.ArrayList([]const u8) = .empty;
+    var reports: std.ArrayList(report.Target) = .empty;
+    var has_directory = false;
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
+        // Help and version win wherever they appear, so the arguments after
+        // them in `ztest api --help GET url` are not reported as mistakes.
         if (is(arg, "-h", "--help")) {
             options.command = .help;
+            return options;
         } else if (is(arg, "-V", "--version")) {
             options.command = .version;
+            return options;
         } else if (is(arg, "-v", "--verbose") or is(arg, "-q", "--quiet")) {
             const level: Level = if (is(arg, "-v", "--verbose")) .verbose else .quiet;
             if (options.level != null and options.level != level) {
@@ -103,6 +139,41 @@ pub fn parse(arena: Allocator, args: []const [:0]const u8, bad_arg: *[]const u8)
             } else {
                 try api.positional(arg);
             }
+        } else if (options.command == .load) {
+            bad_arg.* = arg;
+            if (!std.mem.startsWith(u8, arg, "-")) {
+                // `ztest load GET url` and `ztest load url` both work.
+                if (api.method == null and api.url == null and parseMethod(arg) != null) {
+                    try api.positional(arg);
+                } else {
+                    if (api.method == null) api.method = .GET;
+                    try api.positional(arg);
+                }
+                continue;
+            }
+            i += 1;
+            if (i == args.len) return error.MissingValue;
+            const value = args[i];
+            bad_arg.* = value;
+            if (is(arg, "-u", "--users")) {
+                options.load.users = std.fmt.parseInt(u32, value, 10) catch return error.InvalidValue;
+            } else if (is(arg, "-d", "--duration")) {
+                options.load.duration_ms = parseTime(value) orelse return error.InvalidValue;
+            } else if (std.mem.eql(u8, arg, "--ramp-up")) {
+                options.load.ramp_up_ms = parseTime(value) orelse return error.InvalidValue;
+            } else if (std.mem.eql(u8, arg, "--rps")) {
+                options.load.rps = std.fmt.parseInt(u32, value, 10) catch return error.InvalidValue;
+            } else if (std.mem.eql(u8, arg, "--report")) {
+                const target = report.parseTarget(value) orelse return error.InvalidValue;
+                if (target.format != .json) return error.InvalidValue;
+                try reports.append(arena, target);
+            } else if (isApiFlag(arg)) {
+                bad_arg.* = arg;
+                try api.flag(arena, arg, value, bad_arg);
+            } else {
+                bad_arg.* = arg;
+                return error.UnknownArgument;
+            }
         } else if (options.command == .run) {
             bad_arg.* = arg;
             if (std.mem.eql(u8, arg, "--fail-fast")) {
@@ -111,11 +182,29 @@ pub fn parse(arena: Allocator, args: []const [:0]const u8, bad_arg: *[]const u8)
                 i += 1;
                 if (i == args.len) return error.MissingValue;
                 options.environment = args[i];
+            } else if (std.mem.eql(u8, arg, "--report")) {
+                i += 1;
+                if (i == args.len) return error.MissingValue;
+                bad_arg.* = args[i];
+                const target = report.parseTarget(args[i]) orelse return error.InvalidValue;
+                for (reports.items) |existing| {
+                    if (std.mem.eql(u8, existing.path, target.path)) return error.ConflictingFlags;
+                }
+                try reports.append(arena, target);
             } else if (std.mem.startsWith(u8, arg, "-")) {
                 return error.UnknownArgument;
             } else {
                 try paths.append(arena, arg);
             }
+        } else if (options.command == .init) {
+            bad_arg.* = arg;
+            if (std.mem.startsWith(u8, arg, "-") or has_directory) return error.UnknownArgument;
+            options.directory = arg;
+            has_directory = true;
+        } else if (std.mem.eql(u8, arg, "init")) {
+            options.command = .init;
+        } else if (std.mem.eql(u8, arg, "load")) {
+            options.command = .load;
         } else if (std.mem.eql(u8, arg, "api")) {
             options.command = .api;
         } else if (std.mem.eql(u8, arg, "run")) {
@@ -125,14 +214,17 @@ pub fn parse(arena: Allocator, args: []const [:0]const u8, bad_arg: *[]const u8)
             return error.UnknownArgument;
         }
     }
-    if (options.command == .api) {
+    if (options.command == .api or options.command == .load) {
+        if (options.command == .load and api.method == null and api.url == null) api.method = .GET;
         options.request = try api.finish(bad_arg);
         options.assertions = api.assertions.items;
+        options.reports = reports.items;
     }
     if (options.command == .run) {
         bad_arg.* = "a file or directory";
         if (paths.items.len == 0) return error.MissingArgument;
         options.paths = paths.items;
+        options.reports = reports.items;
     }
     return options;
 }
@@ -210,6 +302,25 @@ fn isApiFlag(arg: []const u8) bool {
     return false;
 }
 
+/// Milliseconds from `500ms`, `30s`, `5m` or `1h`. A bare number is seconds.
+pub fn parseTime(text: []const u8) ?u64 {
+    const units = [_]struct { suffix: []const u8, ms: u64 }{
+        .{ .suffix = "ms", .ms = 1 },
+        .{ .suffix = "s", .ms = std.time.ms_per_s },
+        .{ .suffix = "m", .ms = std.time.ms_per_min },
+        .{ .suffix = "h", .ms = std.time.ms_per_hour },
+    };
+    for (units) |unit| {
+        if (std.mem.endsWith(u8, text, unit.suffix)) {
+            const digits = text[0 .. text.len - unit.suffix.len];
+            const n = std.fmt.parseInt(u64, digits, 10) catch return null;
+            return std.math.mul(u64, n, unit.ms) catch null;
+        }
+    }
+    const n = std.fmt.parseInt(u64, text, 10) catch return null;
+    return std.math.mul(u64, n, std.time.ms_per_s) catch null;
+}
+
 fn parseMethod(text: []const u8) ?Method {
     for (std.enums.values(Method)) |method| {
         if (std.ascii.eqlIgnoreCase(text, @tagName(method))) return method;
@@ -264,6 +375,13 @@ test "short and long flags are parsed" {
     try testing.expectEqual(Level.verbose, options.level.?);
     try testing.expect(options.no_color);
     try testing.expectEqual(Level.quiet, (try parseArgs(&.{"--quiet"})).level.?);
+}
+
+test "help and version win inside a command" {
+    try testing.expectEqual(Command.help, (try parseArgs(&.{ "api", "--help", "GET", "u", "extra" })).command);
+    try testing.expectEqual(Command.help, (try parseArgs(&.{ "run", "-h", "--nope" })).command);
+    try testing.expectEqual(Command.version, (try parseArgs(&.{ "run", "--version" })).command);
+    try testing.expectEqual(Command.help, (try parseArgs(&.{ "init", "--help" })).command);
 }
 
 test "repeating a level flag is allowed" {
@@ -367,6 +485,74 @@ test "run reads its paths and flags" {
     try testing.expectEqualStrings("staging", options.environment.?);
     try testing.expectEqual(2, options.paths.len);
     try testing.expectEqualStrings("a.ztest", options.paths[1]);
+}
+
+test "run reads reports" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var bad_arg: []const u8 = "";
+
+    const options = try parse(arena.allocator(), &.{ "run", "t", "--report", "junit", "--report", "json=out.json" }, &bad_arg);
+    try testing.expectEqual(2, options.reports.len);
+    try testing.expectEqualStrings("ztest-report.xml", options.reports[0].path);
+    try testing.expectEqualStrings("out.json", options.reports[1].path);
+
+    try testing.expectError(error.InvalidValue, parse(arena.allocator(), &.{ "run", "t", "--report", "pdf" }, &bad_arg));
+    try testing.expectEqualStrings("pdf", bad_arg);
+    try testing.expectError(error.ConflictingFlags, parse(arena.allocator(), &.{ "run", "t", "--report", "json=a", "--report", "html=a" }, &bad_arg));
+}
+
+test "init takes an optional directory" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var bad_arg: []const u8 = "";
+
+    try testing.expectEqualStrings(".", (try parse(arena.allocator(), &.{"init"}, &bad_arg)).directory);
+    const options = try parse(arena.allocator(), &.{ "init", "api-tests" }, &bad_arg);
+    try testing.expectEqual(Command.init, options.command);
+    try testing.expectEqualStrings("api-tests", options.directory);
+    try testing.expectError(error.UnknownArgument, parse(arena.allocator(), &.{ "init", "a", "b" }, &bad_arg));
+    try testing.expectError(error.UnknownArgument, parse(arena.allocator(), &.{ "init", "--force" }, &bad_arg));
+}
+
+test "load reads a URL, request flags and load flags" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var bad_arg: []const u8 = "";
+
+    const plain = try parse(arena.allocator(), &.{ "load", "http://a.test" }, &bad_arg);
+    try testing.expectEqual(Command.load, plain.command);
+    try testing.expectEqual(Method.GET, plain.request.?.method);
+    try testing.expectEqual(10, plain.load.users);
+
+    const options = try parse(arena.allocator(), &.{
+        "load",   "POST", "http://a.test", "-u",     "50",       "--duration",    "2m",       "--ramp-up",      "30s", "--rps", "200",
+        "--json", "{}",   "-H",            "X-A: 1", "--assert", "status == 201", "--report", "json=load.json",
+    }, &bad_arg);
+    try testing.expectEqual(Method.POST, options.request.?.method);
+    try testing.expectEqualStrings("http://a.test", options.request.?.url);
+    try testing.expectEqual(50, options.load.users);
+    try testing.expectEqual(120_000, options.load.duration_ms);
+    try testing.expectEqual(30_000, options.load.ramp_up_ms);
+    try testing.expectEqual(200, options.load.rps);
+    try testing.expectEqual(1, options.assertions.len);
+    try testing.expectEqualStrings("load.json", options.reports[0].path);
+
+    try testing.expectError(error.InvalidValue, parse(arena.allocator(), &.{ "load", "u", "--duration", "soon" }, &bad_arg));
+    try testing.expectError(error.InvalidValue, parse(arena.allocator(), &.{ "load", "u", "--report", "junit" }, &bad_arg));
+    try testing.expectError(error.UnknownArgument, parse(arena.allocator(), &.{ "load", "u", "--raw", "x" }, &bad_arg));
+    try testing.expectError(error.MissingArgument, parse(arena.allocator(), &.{ "load", "-u", "5" }, &bad_arg));
+}
+
+test "times take a unit" {
+    try testing.expectEqual(500, parseTime("500ms").?);
+    try testing.expectEqual(30_000, parseTime("30s").?);
+    try testing.expectEqual(300_000, parseTime("5m").?);
+    try testing.expectEqual(3_600_000, parseTime("1h").?);
+    try testing.expectEqual(7_000, parseTime("7").?);
+    try testing.expectEqual(null, parseTime("1.5s"));
+    try testing.expectEqual(null, parseTime("s"));
+    try testing.expectEqual(null, parseTime("99999999999999999999h"));
 }
 
 test "run mistakes are reported" {

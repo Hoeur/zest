@@ -101,6 +101,41 @@ pub const CBN_SELCHANGE = 1;
 pub const EN_CHANGE = 0x0300;
 pub const CBS_DROPDOWNLIST = 0x0003;
 pub const SW_HIDE = 0;
+pub const ES_PASSWORD = 0x0020;
+pub const EM_SETPASSWORDCHAR = 0x00CC;
+pub const WM_APP = 0x8000;
+pub const CB_GETCOUNT = 0x0146;
+
+pub const OpenFileName = extern struct {
+    lStructSize: u32 = @sizeOf(OpenFileName),
+    hwndOwner: Handle = null,
+    hInstance: Handle = null,
+    lpstrFilter: ?[*]const u16 = null,
+    lpstrCustomFilter: ?[*]u16 = null,
+    nMaxCustFilter: u32 = 0,
+    nFilterIndex: u32 = 0,
+    lpstrFile: [*]u16,
+    nMaxFile: u32,
+    lpstrFileTitle: ?[*]u16 = null,
+    nMaxFileTitle: u32 = 0,
+    lpstrInitialDir: ?[*:0]const u16 = null,
+    lpstrTitle: ?[*:0]const u16 = null,
+    Flags: u32 = 0,
+    nFileOffset: u16 = 0,
+    nFileExtension: u16 = 0,
+    lpstrDefExt: ?[*:0]const u16 = null,
+    lCustData: isize = 0,
+    lpfnHook: ?*anyopaque = null,
+    lpTemplateName: ?[*:0]const u16 = null,
+    pvReserved: ?*anyopaque = null,
+    dwReserved: u32 = 0,
+    FlagsEx: u32 = 0,
+};
+pub const OFN_OVERWRITEPROMPT = 0x00000002;
+pub const OFN_NOCHANGEDIR = 0x00000008;
+pub const OFN_PATHMUSTEXIST = 0x00000800;
+pub const OFN_FILEMUSTEXIST = 0x00001000;
+pub const OFN_EXPLORER = 0x00080000;
 
 pub const WS_OVERLAPPEDWINDOW = 0x00CF0000;
 pub const CW_USEDEFAULT: i32 = @bitCast(@as(u32, 0x80000000));
@@ -147,6 +182,12 @@ pub extern "user32" fn SetTimer(hwnd: Handle, id: usize, ms: u32, callback: ?*co
 pub extern "user32" fn KillTimer(hwnd: Handle, id: usize) callconv(.winapi) i32;
 pub extern "user32" fn IsDialogMessageW(hwnd: Handle, msg: *Msg) callconv(.winapi) i32;
 pub extern "user32" fn DestroyWindow(hwnd: Handle) callconv(.winapi) i32;
+pub extern "user32" fn PostMessageW(hwnd: Handle, msg: u32, wparam: usize, lparam: isize) callconv(.winapi) i32;
+pub extern "user32" fn SetWindowLongPtrW(hwnd: Handle, index: i32, value: isize) callconv(.winapi) isize;
+pub extern "user32" fn GetWindowLongPtrW(hwnd: Handle, index: i32) callconv(.winapi) isize;
+
+pub extern "comdlg32" fn GetOpenFileNameW(info: *OpenFileName) callconv(.winapi) i32;
+pub extern "comdlg32" fn GetSaveFileNameW(info: *OpenFileName) callconv(.winapi) i32;
 
 pub extern "gdi32" fn CreateCompatibleDC(hdc: Handle) callconv(.winapi) Handle;
 pub extern "gdi32" fn CreateCompatibleBitmap(hdc: Handle, w: i32, h: i32) callconv(.winapi) Handle;
@@ -217,6 +258,8 @@ pub extern "gdiplus" fn GdipDrawLine(graphics: Handle, pen: Handle, x1: f32, y1:
 pub extern "gdiplus" fn GdipDrawLines(graphics: Handle, pen: Handle, points: [*]const PointF, count: i32) callconv(.winapi) i32;
 pub extern "gdiplus" fn GdipCreateFontFamilyFromName(name: [*:0]const u16, collection: Handle, family: *Handle) callconv(.winapi) i32;
 pub extern "gdiplus" fn GdipDeleteFontFamily(family: Handle) callconv(.winapi) i32;
+pub extern "gdiplus" fn GdipGetGenericFontFamilySansSerif(family: *Handle) callconv(.winapi) i32;
+pub extern "gdiplus" fn GdipGetGenericFontFamilyMonospace(family: *Handle) callconv(.winapi) i32;
 pub extern "gdiplus" fn GdipCreateFont(family: Handle, size: f32, style: i32, unit: i32, font: *Handle) callconv(.winapi) i32;
 pub extern "gdiplus" fn GdipDeleteFont(font: Handle) callconv(.winapi) i32;
 pub extern "gdiplus" fn GdipStringFormatGetGenericTypographic(format: *Handle) callconv(.winapi) i32;

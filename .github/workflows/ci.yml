@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - name: Check formatting
+        run: zig fmt --check build.zig src examples
+      - name: Unit and integration tests
+        run: zig build test --summary all
+      - name: Build release executables
+        run: zig build -Doptimize=ReleaseSafe
+      - name: CLI smoke test
+        run: zig-out/bin/ztest --version
+
+  examples:
+    name: Example suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: zig build -Doptimize=ReleaseSafe
+      - name: Start the echo server
+        working-directory: examples/api
+        run: |
+          python3 echo_server.py 8080 &
+          for i in $(seq 1 20); do curl -fs http://127.0.0.1:8080/get >/dev/null && break; sleep 0.5; done
+      - name: Run the example suites
+        working-directory: examples/api
+        env:
+          ZTEST_EXAMPLE_KEY: demo-key
+        run: >
+          ../../zig-out/bin/ztest run tests/
+          --env ci
+          --report junit=../../zig-out/reports/junit.xml
+          --report html=../../zig-out/reports/report.html
+      - name: Short load test
+        working-directory: examples/api
+        run: ../../zig-out/bin/ztest load http://127.0.0.1:8080/get --users 4 --duration 3s --assert "status == 200"
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ztest-reports
+          path: zig-out/reports/

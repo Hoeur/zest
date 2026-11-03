@@ -57,7 +57,24 @@ pub const Request = struct {
     /// dropped when a redirect changes the scheme, host or port.
     max_redirects: u16 = 5,
     max_response_size: usize = 64 * 1024 * 1024,
+    /// The encoded body plus the URL and headers. Checked before connecting.
+    max_request_size: usize = default_max_request_size,
 };
+
+/// Large enough for any API payload, and small enough that a variable holding
+/// a whole file by mistake fails clearly instead of exhausting memory.
+pub const default_max_request_size = 32 * 1024 * 1024;
+
+/// The bytes `max_request_size` counts: URL, header names and values, query
+/// parameters, cookies and the encoded body.
+pub fn requestSize(request: Request, body: EncodedBody) usize {
+    var size: usize = request.url.len;
+    for (request.headers) |h| size += h.name.len + h.value.len;
+    for (request.query) |p| size += p.name.len + p.value.len;
+    for (request.cookies) |c| size += c.name.len + c.value.len;
+    if (body.data) |data| size += data.len;
+    return size;
+}
 
 pub const EncodeError = Allocator.Error || error{InvalidHeader};
 

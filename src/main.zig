@@ -6,6 +6,8 @@ const build_options = @import("build_options");
 const cli = @import("cli.zig");
 const api = @import("commands/api.zig");
 const run_command = @import("commands/run.zig");
+const init_command = @import("commands/init.zig");
+const load_command = @import("commands/load.zig");
 const config = @import("core/config.zig");
 const Context = @import("core/context.zig").Context;
 const ExitCode = @import("core/errors.zig").ExitCode;
@@ -17,6 +19,10 @@ test {
     _ = cli;
     _ = api;
     _ = run_command;
+    _ = init_command;
+    _ = load_command;
+    _ = @import("core/load/load.zig");
+    _ = @import("core/report/report.zig");
     _ = config;
     _ = @import("core/environment.zig");
     _ = @import("core/log.zig");
@@ -25,6 +31,8 @@ test {
     _ = @import("core/assertions/evaluate.zig");
     _ = @import("core/parser/lexer.zig");
     _ = @import("core/parser/parser.zig");
+    _ = @import("core/parser/writer.zig");
+    _ = @import("core/fuzz_test.zig");
     _ = @import("core/runner/variables.zig");
     _ = @import("core/runner/runner_test.zig");
     _ = @import("core/http/request.zig");
@@ -103,7 +111,21 @@ fn execute(context: Context, options: cli.Options) !ExitCode {
             break :version .success;
         },
         .api => try api.run(context, out, options.request.?, options.assertions, options.raw),
-        .run => try run_command.run(context, out, options.paths, options.environment, .{ .fail_fast = options.fail_fast }),
+        .run => try run_command.run(context, out, options.paths, .{
+            .environment = options.environment,
+            .options = .{ .fail_fast = options.fail_fast },
+            .reports = options.reports,
+            .version = build_options.version,
+        }),
+        .init => try init_command.run(context, out, options.directory),
+        .load => try load_command.run(context, out, options.request.?, options.assertions, .{
+            .users = options.load.users,
+            .duration_ms = options.load.duration_ms,
+            .ramp_up_ms = options.load.ramp_up_ms,
+            .rps = options.load.rps,
+            .reports = options.reports,
+            .version = build_options.version,
+        }),
     };
     try out.flush();
     return code;

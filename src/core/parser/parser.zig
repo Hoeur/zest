@@ -12,7 +12,7 @@ pub const Diagnostic = lexer.Diagnostic;
 
 pub const Error = Allocator.Error || lexer.Error;
 
-const CaseKeyword = enum { end, header, body, expect, extract, skip, disabled, timeout, @"var" };
+const CaseKeyword = enum { end, header, query, auth, body, expect, extract, skip, disabled, timeout, @"var" };
 const SuiteKeyword = enum { @"var", setup, teardown, @"test" };
 
 /// On `error.SyntaxError`, `diagnostic` says what is wrong and on which line.
@@ -87,6 +87,8 @@ const Parser = struct {
         var has_request = false;
         var variables: std.ArrayList(ast.Variable) = .empty;
         var headers: std.ArrayList(http.Header) = .empty;
+        var query: std.ArrayList(http.Param) = .empty;
+        var auth: http.Auth = .none;
         var expects: std.ArrayList(ast.Expect) = .empty;
         var extracts: std.ArrayList(ast.Extract) = .empty;
         var body: ast.Body = .none;
@@ -113,6 +115,11 @@ const Parser = struct {
                     break;
                 },
                 .header => try headers.append(p.arena, try p.parseHeader(token.line)),
+                .query => try query.append(p.arena, try p.parseQuery(token.line)),
+                .auth => {
+                    if (auth != .none) return p.fail(token.line, "a test can only have one auth", .{});
+                    auth = try p.parseAuth(token.line);
+                },
                 .body => {
                     if (body != .none) return p.fail(token.line, "a test can only have one body", .{});
                     body = try p.parseBody(token.line);
@@ -131,6 +138,8 @@ const Parser = struct {
 
         if (!has_request) return p.fail(line, "'{s}' has no request, such as: GET https://example.com", .{name});
         case.request.headers = headers.items;
+        case.request.query = query.items;
+        case.request.auth = auth;
         case.request.body = body;
         case.variables = variables.items;
         case.expects = expects.items;
@@ -173,6 +182,36 @@ const Parser = struct {
             return p.fail(line, "write a header without a colon: header Name value", .{});
         }
         return .{ .name = name, .value = value };
+    }
+
+    /// The value may be empty, for a parameter such as `?flag=`.
+    fn parseQuery(p: *Parser, line: usize) Error!http.Param {
+        const name = p.lexer.word();
+        const value = p.lexer.restOfLine();
+        if (name.len == 0) return p.fail(line, "a query parameter looks like: query name value", .{});
+        return .{ .name = name, .value = value };
+    }
+
+    /// `auth basic user password`, `auth bearer token`, `auth header Name key`
+    /// or `auth query name key`. The last part is the rest of the line.
+    fn parseAuth(p: *Parser, line: usize) Error!http.Auth {
+        const kind = p.lexer.word();
+        const usage = "auth is: basic <user> <password>, bearer <token>, header <name> <key> or query <name> <key>";
+        if (std.mem.eql(u8, kind, "bearer")) {
+            const token = p.lexer.restOfLine();
+            if (token.len == 0) return p.fail(line, usage, .{});
+            return .{ .bearer = token };
+        }
+        const first = p.lexer.word();
+        const rest = p.lexer.restOfLine();
+        if (first.len == 0 or rest.len == 0) return p.fail(line, usage, .{});
+        if (std.mem.eql(u8, kind, "basic")) return .{ .basic = .{ .user = first, .password = rest } };
+        if (std.mem.eql(u8, kind, "header")) {
+            if (std.mem.findScalar(u8, first, ':') != null) return p.fail(line, "write a header without a colon: auth header Name key", .{});
+            return .{ .api_key_header = .{ .name = first, .value = rest } };
+        }
+        if (std.mem.eql(u8, kind, "query")) return .{ .api_key_query = .{ .name = first, .value = rest } };
+        return p.fail(line, usage, .{});
     }
 
     fn parseBody(p: *Parser, line: usize) Error!ast.Body {
@@ -535,6 +574,50 @@ test "secret marks a var or an extract, and is still a usable name" {
     try testing.expectEqualStrings("secret", extracts[1].name);
     try testing.expect(!extracts[1].secret);
     try testing.expect(!extracts[2].secret);
+}
+
+test "query and auth statements parse" {
+    var f: Fixture = .{};
+    defer f.deinit();
+
+    const suite = try f.parseText(
+        \\suite "S"
+        \\test "T"
+        \\  GET {{base}}/search
+        \\  query q hello world
+        \\  query empty
+        \\  auth basic {{user}} pass word
+        \\end
+        \\test "U"
+        \\  GET u
+        \\  auth bearer {{token}}
+        \\end
+        \\test "V"
+        \\  GET u
+        \\  auth header X-Api-Key {{key}}
+        \\end
+        \\test "W"
+        \\  GET u
+        \\  auth query api_key k
+        \\end
+        \\
+    );
+    const first = suite.tests[0].request;
+    try testing.expectEqual(2, first.query.len);
+    try testing.expectEqualStrings("hello world", first.query[0].value);
+    try testing.expectEqualStrings("", first.query[1].value);
+    try testing.expectEqualStrings("{{user}}", first.auth.basic.user);
+    try testing.expectEqualStrings("pass word", first.auth.basic.password);
+    try testing.expectEqualStrings("{{token}}", suite.tests[1].request.auth.bearer);
+    try testing.expectEqualStrings("X-Api-Key", suite.tests[2].request.auth.api_key_header.name);
+    try testing.expectEqualStrings("api_key", suite.tests[3].request.auth.api_key_query.name);
+}
+
+test "query and auth mistakes are reported" {
+    try expectFailure("suite \"S\"\ntest \"T\"\nGET u\nquery\nend\n", 4, "a query parameter looks like: query name value");
+    try expectFailure("suite \"S\"\ntest \"T\"\nGET u\nauth digest a b\nend\n", 4, "auth is: basic <user> <password>, bearer <token>, header <name> <key> or query <name> <key>");
+    try expectFailure("suite \"S\"\ntest \"T\"\nGET u\nauth basic ada\nend\n", 4, "auth is: basic <user> <password>, bearer <token>, header <name> <key> or query <name> <key>");
+    try expectFailure("suite \"S\"\ntest \"T\"\nGET u\nauth bearer a\nauth bearer b\nend\n", 5, "a test can only have one auth");
 }
 
 test "secret mistakes are reported" {

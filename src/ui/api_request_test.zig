@@ -5,6 +5,7 @@ const api = @import("api_request.zig");
 const Server = @import("../core/http/client_test.zig").Server;
 test {
     _ = @import("json_tokens.zig");
+    _ = @import("workspace.zig");
 }
 
 test "API mockup layout keeps the primary controls within a small window" {
@@ -212,4 +213,49 @@ test "desktop previews handle binary controls and oversized UTF-8 bodies" {
     defer testing.allocator.free(preview);
     try testing.expect(std.unicode.utf8ValidateSlice(preview));
     try testing.expect(std.mem.endsWith(u8, preview, "[Preview truncated at 64 KiB]\r\n"));
+}
+
+test "desktop variables, params and auth reach the wire, and assertions run with secrets hidden" {
+    var server = try Server.listen(&.{"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 30\r\n\r\n{\"token\":\"t0p\",\"name\":\"Ada\"}  "});
+    defer server.listener.deinit(testing.io);
+    var task = try testing.io.concurrent(Server.serve, .{&server});
+    defer task.cancel(testing.io) catch {};
+    var session = api.Session.init(testing.allocator, testing.io);
+    defer session.deinit();
+    var buffer: [128]u8 = undefined;
+    const base = try std.fmt.bufPrint(&buffer, "http://127.0.0.1:{d}", .{server.port()});
+    try session.startDraft(.{
+        .url = "{{base}}/users",
+        .params = "page={{page}}\r\n# off=1",
+        .auth = .{ .kind = .bearer, .value = "{{token}}" },
+        .assertions = "status == 200\r\nbody.name == \"Ada\"\r\nbody.token == \"wrong\"",
+        .variables = &.{
+            .{ .name = "base", .value = base, .line = 0 },
+            .{ .name = "page", .value = "2", .line = 0 },
+            .{ .name = "token", .value = "t0p", .line = 0, .secret = true },
+        },
+    }, 2000);
+    try finish(&session);
+    try testing.expectEqual(api.Phase.completed, session.phase);
+    const received = server.received[0..server.received_len];
+    try testing.expect(std.mem.startsWith(u8, received, "GET /users?page=2 HTTP/1.1\r\n"));
+    try testing.expect(std.mem.find(u8, received, "authorization: Bearer t0p\r\n") != null);
+
+    const counts = session.assertionCounts().?;
+    try testing.expectEqual(2, counts.passed);
+    try testing.expectEqual(1, counts.failed);
+    try testing.expect(std.mem.find(u8, session.results[2].actual, "t0p") == null);
+
+    const body = try session.preview(testing.allocator, .body);
+    defer testing.allocator.free(body);
+    try testing.expect(std.mem.find(u8, body, "t0p") == null);
+    try testing.expect(std.mem.find(u8, body, "********") != null);
+}
+
+test "an undefined desktop variable is named before anything is sent" {
+    var session = api.Session.init(testing.allocator, testing.io);
+    defer session.deinit();
+    try testing.expectError(error.MissingVariable, session.startDraft(.{ .url = "{{baseUrl}}/x" }, 2000));
+    try testing.expect(!session.busy());
+    try testing.expect(std.mem.startsWith(u8, session.message(), "{{baseUrl}} is not defined"));
 }
