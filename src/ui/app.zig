@@ -13,10 +13,71 @@ const load_test = @import("screens/load_test.zig");
 const placeholder = @import("screens/placeholder.zig");
 const Session = @import("api_request.zig").Session;
 const Workspace = @import("workspace.zig").Workspace;
+pub const Model = @import("model.zig").Model;
+const fields = @import("fields.zig");
+const widgets = @import("widgets.zig");
 
-/// Work a click asks for that needs the window, such as a file dialog. The
-/// frame only records it, and the window runs it after painting.
-pub const Action = enum(usize) { none, send, open, save, save_as, new, edit_tests, previous_test, next_test };
+/// Work a click asks for that needs the window, such as a file dialog or a
+/// menu. The frame only records it, with `Ui.arg` and the point clicked, and
+/// the window runs it after painting.
+pub const Action = enum(usize) {
+    none,
+    send,
+    open,
+    save,
+    save_as,
+    new,
+    edit_tests,
+    previous_test,
+    next_test,
+    // API Tests menus and buttons.
+    more_menu,
+    run_menu,
+    send_menu,
+    snippets_menu,
+    save_as_menu,
+    insert_variable,
+    variable_filter,
+    copy_variable,
+    reveal_variable,
+    response_format,
+    response_copy,
+    response_expand,
+    assert_templates,
+    assert_add,
+    assert_operator,
+    assert_delete,
+    assert_edit,
+    // Load Tests.
+    load_start,
+    load_stop,
+    load_configs,
+    // Test Suites.
+    suite_select,
+    suite_new,
+    suite_run,
+    suite_run_menu,
+    suite_stop,
+    suite_export,
+    suite_open_test,
+    suite_more,
+    copy_text,
+    // Dashboard.
+    run_all,
+    run_all_menu,
+    new_test,
+    new_test_menu,
+    trend_range,
+    runs_suite_filter,
+    run_row_menu,
+    // Top bar.
+    environment_menu,
+    notifications_menu,
+    // Elsewhere.
+    focus_field,
+    reload,
+    open_suite_file,
+};
 
 pub const Input = struct {
     mouse_x: f32 = -1,
@@ -33,8 +94,16 @@ pub const Ui = struct {
     state: *state.State,
     api: *Session,
     workspace: *Workspace,
+    m: *Model,
     input: Input,
     action: Action = .none,
+    /// The action's subject, such as an assertion's line.
+    arg: usize = 0,
+    /// Where a menu opens, in logical pixels.
+    point_x: f32 = 0,
+    point_y: f32 = 0,
+    placements: [16]fields.Placement = undefined,
+    placement_count: usize = 0,
     /// Set when the pointer is over something clickable.
     hand: bool = false,
     /// Set when a click changed state, so the frame must be redrawn.
@@ -52,6 +121,21 @@ pub const Ui = struct {
         return r.contains(ui.input.mouse_x, ui.input.mouse_y) and ui.reachable(ui.input.mouse_x, ui.input.mouse_y);
     }
 
+    /// Puts a native field over `r` for this frame.
+    pub fn place(ui: *Ui, id: fields.Id, r: Rect) void {
+        if (ui.placement_count == ui.placements.len) return;
+        ui.placements[ui.placement_count] = .{ .id = id, .rect = r };
+        ui.placement_count += 1;
+    }
+
+    /// Records a click's action, with a menu under `r` when one opens.
+    pub fn act(ui: *Ui, action: Action, arg: usize, r: Rect) void {
+        ui.action = action;
+        ui.arg = arg;
+        ui.point_x = r.x;
+        ui.point_y = r.bottom() + 2;
+    }
+
     /// Returns true on the frame `r` is clicked.
     pub fn pressed(ui: *Ui, r: Rect) bool {
         if (ui.hovered(r)) ui.hand = true;
@@ -66,6 +150,11 @@ pub const Result = struct {
     hand: bool,
     changed: bool,
     action: Action = .none,
+    arg: usize = 0,
+    point_x: f32 = 0,
+    point_y: f32 = 0,
+    placements: [16]fields.Placement = undefined,
+    placement_count: usize = 0,
 };
 
 const nav = [_]struct { screen: state.Screen, icon: []const u8 }{
@@ -78,8 +167,8 @@ const nav = [_]struct { screen: state.Screen, icon: []const u8 }{
     .{ .screen = .settings, .icon = theme.icon.settings },
 };
 
-pub fn frame(c: *Canvas, s: *state.State, api: *Session, workspace: *Workspace, input: Input, width: f32, height: f32) Result {
-    var ui: Ui = .{ .c = c, .state = s, .api = api, .workspace = workspace, .input = input };
+pub fn frame(c: *Canvas, s: *state.State, m: *Model, input: Input, width: f32, height: f32) Result {
+    var ui: Ui = .{ .c = c, .state = s, .api = &m.api, .workspace = &m.workspace, .m = m, .input = input };
     const main: Rect = .{
         .x = theme.sidebar_width,
         .y = theme.topbar_height,
@@ -103,7 +192,27 @@ pub fn frame(c: *Canvas, s: *state.State, api: *Session, workspace: *Workspace, 
 
     drawSidebar(&ui, height);
     drawTopBar(&ui, width);
-    return .{ .hand = ui.hand, .changed = ui.changed, .action = ui.action };
+    // API Tests shows notes in its header; other pages float them.
+    if (s.screen != .api_tests and m.toast_until > m.now and m.toast.len > 0) drawToast(c, m.toast, main);
+    return .{
+        .hand = ui.hand,
+        .changed = ui.changed,
+        .action = ui.action,
+        .arg = ui.arg,
+        .point_x = ui.point_x,
+        .point_y = ui.point_y,
+        .placements = ui.placements,
+        .placement_count = ui.placement_count,
+    };
+}
+
+fn drawToast(c: *Canvas, text: []const u8, area: Rect) void {
+    const w = @min(area.w - 40, c.measure(.body, text) + 56);
+    const box: Rect = .{ .x = area.x + (area.w - w) / 2, .y = area.bottom() - 70, .w = w, .h = 44 };
+    c.fillRound(box, 10, theme.raised);
+    c.strokeRound(box, 10, theme.border);
+    c.text(.icon, theme.icon.info, .{ .x = box.x + 16, .y = box.y, .w = 20, .h = box.h }, .left, theme.amber);
+    c.text(.body, text, .{ .x = box.x + 42, .y = box.y, .w = box.w - 56, .h = box.h }, .left, theme.text);
 }
 
 fn drawSidebar(ui: *Ui, height: f32) void {
@@ -143,28 +252,25 @@ fn drawTopBar(ui: *Ui, width: f32) void {
 
     const environment: Rect = .{ .x = bar.right() - 245, .y = 14, .w = 195, .h = 38 };
     const search: Rect = .{ .x = bar.x + theme.page_margin, .y = 14, .w = @min(680, environment.x - bar.x - theme.page_margin * 2), .h = 38 };
-    c.strokeRound(search, 8, theme.border);
-    c.text(.icon, theme.icon.search, .{ .x = search.x + 14, .y = search.y, .w = 20, .h = search.h }, .left, theme.muted);
-    c.text(.body, "Search tests, suites, or endpoints...", .{ .x = search.x + 42, .y = search.y, .w = search.w - 56, .h = search.h }, .left, theme.muted);
-
-    // API Tests uses the real environments from ztest.json; other pages
-    // still show sample data, so they keep the sample selector.
-    const live = ui.state.screen == .api_tests;
-    if (ui.pressed(environment)) {
-        if (live) ui.workspace.cycleEnvironment() else ui.state.environment = ui.state.environment.next();
+    widgets.searchField(ui, search, .global_search, "", "Search tests, suites, or endpoints...");
+    if (ui.m.focused_field != .global_search) {
+        const key: Rect = .{ .x = search.right() - 50, .y = search.y + 9, .w = 40, .h = 20 };
+        c.strokeRound(key, 5, theme.border);
+        c.text(.tiny, "Ctrl K", key, .center, theme.muted);
     }
+
+    // Every page uses the environments from ztest.json.
+    if (ui.pressed(environment)) ui.act(.environment_menu, 0, environment);
     if (ui.hovered(environment)) c.fillRound(environment, 8, theme.raised);
     c.strokeRound(environment, 8, theme.border);
-    const dot = if (live)
-        (if (ui.workspace.config_problem != null) theme.red else if (ui.workspace.selected != null) theme.green else theme.blue)
-    else switch (ui.state.environment) {
-        .production => theme.green,
-        .staging, .development => theme.amber,
-    };
+    const dot = if (ui.workspace.config_problem != null) theme.red else if (ui.workspace.selected != null) theme.green else theme.blue;
     c.circle(environment.x + 20, environment.y + 19, 5, dot);
-    const label = if (live) ui.workspace.environmentName() else ui.state.environment.label();
-    c.text(.body, label, .{ .x = environment.x + 36, .y = environment.y, .w = environment.w - 70, .h = environment.h }, .left, theme.text);
+    c.text(.body, ui.workspace.environmentName(), .{ .x = environment.x + 36, .y = environment.y, .w = environment.w - 70, .h = environment.h }, .left, theme.text);
     c.text(.icon, theme.icon.chevron_down, .{ .x = environment.right() - 30, .y = environment.y, .w = 18, .h = environment.h }, .left, theme.muted);
 
-    c.text(.icon, theme.icon.bell, .{ .x = bar.right() - 42, .y = 14, .w = 28, .h = 38 }, .center, theme.text);
+    const bell: Rect = .{ .x = bar.right() - 44, .y = 14, .w = 34, .h = 38 };
+    if (ui.hovered(bell)) c.fillRound(bell, 8, theme.raised);
+    c.strokeRound(bell, 8, theme.border);
+    c.text(.icon, theme.icon.bell, bell, .center, theme.text);
+    if (ui.pressed(bell)) ui.act(.notifications_menu, 0, .{ .x = bell.right() - 320, .y = bell.y, .w = 320, .h = bell.h });
 }

@@ -22,6 +22,11 @@ pub const Shown = struct {
     value: []const u8,
     /// `ztest.json`, the environment's name, or the file's name.
     source: []const u8,
+    secret: bool = false,
+    /// The unmasked value, shown only when the user asks to reveal it.
+    raw: []const u8 = "",
+    /// Where it comes from: 0 global, 1 environment, 2 file.
+    origin: u8 = 0,
 };
 
 pub const File = struct {
@@ -40,6 +45,9 @@ pub const Workspace = struct {
     settings: config.Config = .{},
     /// Why `ztest.json` could not be read, shown in place of its variables.
     config_problem: ?[]const u8 = null,
+    /// The folder `ztest.json` was read from, or would be. Suites, history and
+    /// reports are found relative to it.
+    root: []const u8 = ".",
     /// Index into `settings.environments`, or null for global values only.
     selected: ?usize = null,
     file: ?File = null,
@@ -71,6 +79,7 @@ pub const Workspace = struct {
         w.config_problem = null;
         w.selected = null;
         const arena = w.config_arena.allocator();
+        w.root = arena.dupe(u8, dir_path) catch ".";
         var dir = Io.Dir.cwd().openDir(w.io, dir_path, .{}) catch |err| {
             w.config_problem = std.fmt.allocPrint(arena, "Cannot open {s}: {s}", .{ dir_path, @errorName(err) }) catch "Cannot open the folder";
             return;
@@ -101,6 +110,12 @@ pub const Workspace = struct {
             } else |_| {}
         }
         w.loadConfig(std.fs.path.dirname(file_path) orelse ".");
+    }
+
+    /// The chosen environment's name, or null for global values only.
+    pub fn selectedName(w: *const Workspace) ?[]const u8 {
+        const i = w.selected orelse return null;
+        return w.settings.environments.items[i].name;
     }
 
     pub fn environmentName(w: *const Workspace) []const u8 {
@@ -142,10 +157,10 @@ pub const Workspace = struct {
     /// a name replaces the earlier row, as it does when sending.
     pub fn shownVariables(w: *const Workspace, arena: Allocator) Allocator.Error![]const Shown {
         var out: std.ArrayList(Shown) = .empty;
-        try addShown(arena, &out, w.settings.variables, config.file_name, w.environ);
+        try addShown(arena, &out, w.settings.variables, config.file_name, w.environ, 0);
         if (w.selected) |i| {
             const env = w.settings.environments.items[i];
-            try addShown(arena, &out, env.variables, env.name, w.environ);
+            try addShown(arena, &out, env.variables, env.name, w.environ, 1);
         }
         if (w.file) |file| {
             const source = std.fs.path.basename(file.path);
@@ -154,6 +169,9 @@ pub const Workspace = struct {
                     .name = variable.name,
                     .value = if (variable.secret) redact.mask else variable.value,
                     .source = source,
+                    .secret = variable.secret,
+                    .raw = variable.value,
+                    .origin = 2,
                 });
             }
         }
@@ -200,6 +218,19 @@ pub const Workspace = struct {
             w.setMessage("Opened {s}", .{std.fs.path.basename(path)});
         }
         return result;
+    }
+
+    /// Opens `path` showing the test called `name`, or the first test.
+    pub fn openAt(w: *Workspace, path: []const u8, name: []const u8) !draft.Draft {
+        const first = try w.open(path);
+        const file = &w.file.?;
+        for (file.suite.tests, 0..) |case, i| {
+            if (!std.mem.eql(u8, case.name, name)) continue;
+            file.test_index = i;
+            w.setMessage("Opened {s} from {s}", .{ case.name, std.fs.path.basename(path) });
+            return draft.fromCase(w.file_arena.allocator(), case);
+        }
+        return first;
     }
 
     /// Writes `source` as the test being edited. Saving over the open file
@@ -341,7 +372,7 @@ pub const Workspace = struct {
     }
 };
 
-fn addShown(arena: Allocator, out: *std.ArrayList(Shown), list: config.Variables, source: []const u8, environ: *const std.process.Environ.Map) Allocator.Error!void {
+fn addShown(arena: Allocator, out: *std.ArrayList(Shown), list: config.Variables, source: []const u8, environ: *const std.process.Environ.Map, origin: u8) Allocator.Error!void {
     for (list.items) |variable| try putShown(arena, out, .{
         .name = variable.name,
         .value = switch (variable.source) {
@@ -352,6 +383,12 @@ fn addShown(arena: Allocator, out: *std.ArrayList(Shown), list: config.Variables
                 redact.mask,
         },
         .source = source,
+        .secret = variable.source == .env and envValue(environ, variable.source.env).len > 0,
+        .raw = switch (variable.source) {
+            .text => |text| text,
+            .env => |key| envValue(environ, key),
+        },
+        .origin = origin,
     });
 }
 

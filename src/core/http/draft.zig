@@ -445,7 +445,95 @@ fn crlf(allocator: Allocator, text: []const u8) Allocator.Error![]const u8 {
     return out.items;
 }
 
+/// A `curl` command for the draft as written, with `{{variables}}` left in
+/// place, so no secret is copied. Switched-off lines are left out.
+pub fn toCurl(allocator: Allocator, draft: Draft) Allocator.Error![]const u8 {
+    var out: std.Io.Writer.Allocating = .init(allocator);
+    const w = &out.writer;
+    curlWrite(w, draft) catch return error.OutOfMemory;
+    return out.written();
+}
+
+fn curlWrite(w: *std.Io.Writer, draft: Draft) std.Io.Writer.Error!void {
+    try w.print("curl -X {s} ", .{@tagName(draft.method)});
+    var url: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+    defer url.deinit();
+    try url.writer.writeAll(std.mem.trim(u8, draft.url, " \t\r\n"));
+    var has_query = std.mem.findScalar(u8, draft.url, '?') != null;
+    var params = Lines.init(draft.params);
+    while (params.next()) |line| {
+        const p = parseParamLine(line.text) catch continue;
+        try url.writer.print("{c}{s}={s}", .{ @as(u8, if (has_query) '&' else '?'), p.name, p.value });
+        has_query = true;
+    }
+    switch (draft.auth.kind) {
+        .api_key_query => try url.writer.print("{c}{s}={s}", .{ @as(u8, if (has_query) '&' else '?'), draft.auth.name, draft.auth.value }),
+        else => {},
+    }
+    try shellQuote(w, url.written());
+    var headers = Lines.init(draft.headers);
+    while (headers.next()) |line| {
+        try w.writeAll(" \\\n  -H ");
+        try shellQuote(w, line.text);
+    }
+    switch (draft.auth.kind) {
+        .none, .api_key_query => {},
+        .basic => {
+            try w.writeAll(" \\\n  -u ");
+            var both: [512]u8 = undefined;
+            try shellQuote(w, std.fmt.bufPrint(&both, "{s}:{s}", .{ draft.auth.name, draft.auth.value }) catch draft.auth.name);
+        },
+        .bearer => {
+            try w.writeAll(" \\\n  -H ");
+            var header: [512]u8 = undefined;
+            try shellQuote(w, std.fmt.bufPrint(&header, "Authorization: Bearer {s}", .{draft.auth.value}) catch "Authorization: Bearer");
+        },
+        .api_key_header => {
+            try w.writeAll(" \\\n  -H ");
+            var header: [512]u8 = undefined;
+            try shellQuote(w, std.fmt.bufPrint(&header, "{s}: {s}", .{ draft.auth.name, draft.auth.value }) catch draft.auth.name);
+        },
+    }
+    if (draft.body_kind != .none) {
+        if (draft.body_kind == .json) try w.writeAll(" \\\n  -H 'Content-Type: application/json'");
+        try w.writeAll(" \\\n  --data-raw ");
+        try shellQuote(w, draft.body);
+    }
+    try w.writeByte('\n');
+}
+
+/// Single quotes, with a quote inside written as `'\''`.
+fn shellQuote(w: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {
+    try w.writeByte('\'');
+    for (text) |c| {
+        if (c == '\'') try w.writeAll("'\\''") else if (c != '\r') try w.writeByte(c);
+    }
+    try w.writeByte('\'');
+}
+
 const testing = std.testing;
+
+test "a draft becomes a curl command with variables left in" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const text = try toCurl(arena.allocator(), .{
+        .method = .POST,
+        .url = "{{baseUrl}}/users",
+        .headers = "Accept: application/json\r\n# X-Off: 1",
+        .params = "q=it's",
+        .auth = .{ .kind = .bearer, .value = "{{token}}" },
+        .body_kind = .json,
+        .body = "{\"a\": 1}",
+    });
+    try testing.expectEqualStrings(
+        \\curl -X POST '{{baseUrl}}/users?q=it'\''s' \
+        \\  -H 'Accept: application/json' \
+        \\  -H 'Authorization: Bearer {{token}}' \
+        \\  -H 'Content-Type: application/json' \
+        \\  --data-raw '{"a": 1}'
+        \\
+    , text);
+}
 
 test "text headers preserve duplicates colons and empty values" {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);

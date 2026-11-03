@@ -99,9 +99,12 @@ fn addUi(
             .link_libc = true,
         }),
     });
+    const options = b.addOptions();
+    options.addOption([]const u8, "version", package.version);
+    exe.root_module.addOptions("build_options", options);
     exe.subsystem = .windows;
     exe.root_module.addWin32ResourceFile(.{ .file = b.path("src/ui/assets/ztest.rc") });
-    for ([_][]const u8{ "user32", "gdi32", "gdiplus", "dwmapi", "shlwapi", "ole32", "comctl32", "comdlg32" }) |lib| {
+    for ([_][]const u8{ "user32", "gdi32", "gdiplus", "dwmapi", "shlwapi", "ole32", "comctl32", "comdlg32", "uxtheme" }) |lib| {
         exe.root_module.linkSystemLibrary(lib, .{});
     }
     b.installArtifact(exe);

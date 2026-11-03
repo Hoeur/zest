@@ -39,6 +39,15 @@ pub const Font = enum {
 
 pub const Align = enum(i32) { left = 0, center = 1, right = 2 };
 
+/// The start of `str` that fits a 256-unit UTF-16 buffer, cut on a character
+/// boundary. Longer text is cut with "..." when drawn anyway.
+fn fitting(str: []const u8) []const u8 {
+    if (str.len <= 250) return str;
+    var end: usize = 250;
+    while (end > 0 and str[end] & 0xC0 == 0x80) end -= 1;
+    return str[0..end];
+}
+
 pub const Canvas = struct {
     g: win.Handle = null,
     brush: win.Handle = null,
@@ -174,6 +183,10 @@ pub const Canvas = struct {
         _ = win.GdipFillPolygon2(c.g, c.brush, points.ptr, @intCast(points.len));
     }
 
+    pub fn triangle(c: *Canvas, x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32, color: u32) void {
+        c.fillPolygon(&.{ .{ .x = x1, .y = y1 }, .{ .x = x2, .y = y2 }, .{ .x = x3, .y = y3 } }, color);
+    }
+
     pub fn drawLogo(c: *Canvas, r: Rect) void {
         _ = win.GdipDrawImageRect(c.g, c.logo, r.x, r.y, r.w, r.h);
     }
@@ -186,7 +199,7 @@ pub const Canvas = struct {
     /// Draws one line, vertically centered in `r`, cut with "..." if too long.
     pub fn text(c: *Canvas, font: Font, str: []const u8, r: Rect, alignment: Align, color: u32) void {
         var buffer: [256]u16 = undefined;
-        const len = std.unicode.utf8ToUtf16Le(&buffer, str) catch return;
+        const len = std.unicode.utf8ToUtf16Le(&buffer, fitting(str)) catch return;
         _ = win.GdipSetSolidFillColor(c.brush, color);
         _ = win.GdipSetStringFormatAlign(c.format, @backingInt(alignment));
         const layout: win.RectF = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h };
@@ -195,7 +208,7 @@ pub const Canvas = struct {
 
     pub fn measure(c: *Canvas, font: Font, str: []const u8) f32 {
         var buffer: [256]u16 = undefined;
-        const len = std.unicode.utf8ToUtf16Le(&buffer, str) catch return 0;
+        const len = std.unicode.utf8ToUtf16Le(&buffer, fitting(str)) catch return 0;
         const layout: win.RectF = .{ .x = 0, .y = 0, .w = 4096, .h = 256 };
         var box: win.RectF = .{ .x = 0, .y = 0, .w = 0, .h = 0 };
         _ = win.GdipSetStringFormatAlign(c.format, @backingInt(Align.left));

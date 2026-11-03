@@ -138,21 +138,40 @@ pub fn highlight(handle: win.Handle, enabled: bool) void {
         if (win.GetFocus() != focus) _ = win.SetFocus(focus);
     }
     setColor(handle, c.SCF_ALL, theme.text);
-    if (!enabled or content.len > 32768) return;
-    var lexer: json.Lexer = .{ .text = content };
+    if (content.len > 32768) return;
     var count: usize = 0;
-    while (lexer.next()) |token| {
-        if (count == 4096) break;
-        count += 1;
-        const range: c.CHARRANGE = .{ .cpMin = @intCast(token.start), .cpMax = @intCast(token.end) };
-        _ = win.SendMessageW(handle, c.EM_EXSETSEL, 0, @bitCast(@intFromPtr(&range)));
-        setColor(handle, c.SCF_SELECTION, switch (token.kind) {
-            .key => theme.blue,
-            .string => theme.string,
-            .number => theme.amber,
-            .literal => theme.purple,
-        });
+    if (enabled) {
+        var lexer: json.Lexer = .{ .text = content };
+        while (lexer.next()) |token| {
+            if (count == 4096) break;
+            count += 1;
+            const range: c.CHARRANGE = .{ .cpMin = @intCast(token.start), .cpMax = @intCast(token.end) };
+            _ = win.SendMessageW(handle, c.EM_EXSETSEL, 0, @bitCast(@intFromPtr(&range)));
+            setColor(handle, c.SCF_SELECTION, switch (token.kind) {
+                .key => theme.blue,
+                .string => theme.string,
+                .number => theme.amber,
+                .literal => theme.purple,
+            });
+        }
     }
+    // `{{name}}` is amber wherever it appears, as in the mockups.
+    var i: usize = 0;
+    while (i + 4 < content.len and count < 4096) : (i += 1) {
+        if (content[i] != '{' or content[i + 1] != '{') continue;
+        var j = i + 2;
+        while (j < content.len and isNameUnit(content[j])) j += 1;
+        if (j == i + 2 or j + 1 >= content.len or content[j] != '}' or content[j + 1] != '}') continue;
+        count += 1;
+        const range: c.CHARRANGE = .{ .cpMin = @intCast(i), .cpMax = @intCast(j + 2) };
+        _ = win.SendMessageW(handle, c.EM_EXSETSEL, 0, @bitCast(@intFromPtr(&range)));
+        setColor(handle, c.SCF_SELECTION, theme.amber);
+        i = j + 1;
+    }
+}
+
+fn isNameUnit(unit: u16) bool {
+    return (unit >= 'a' and unit <= 'z') or (unit >= 'A' and unit <= 'Z') or (unit >= '0' and unit <= '9') or unit == '_';
 }
 
 fn setColor(handle: win.Handle, scope: usize, color: u32) void {

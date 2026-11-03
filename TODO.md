@@ -25,10 +25,29 @@
 - [x] Fuzz the parser, writer, assertions, drafts, config and templates; add an engine-wide request-size limit
 - [x] Evaluate cross-platform desktop UI (`docs/UI_PLATFORM.md`)
 
-Next: run the dvui spike from `docs/UI_PLATFORM.md`, then the Test Suites screen on
-the runner, the Load Tests screen on `load.Engine`, history, and release packaging.
+Next: run the dvui spike from `docs/UI_PLATFORM.md` and release packaging.
 Smaller gaps: form-urlencoded and multipart bodies (core supports them, the format
 and desktop do not), proxy support, and scenario load tests from a `.ztest` suite.
+
+---
+
+## UI Design Follow-up — 2026-11-03
+
+Every desktop page now follows its mockup in `ui/` and shows real data. The Pro
+upgrade card and the account avatar are left out: ZTest has neither.
+
+- [x] Run history in `.ztest/history.jsonl` (`src/core/history.zig`), written by the desktop
+- [x] Dashboard from history: stats with 7-day changes, results trend, recent activity, paged test runs, Run All, New Test
+- [x] API Tests: Saved/Unsaved status, Run Test and Send menus, Code Snippets (cURL, ZTest test, URL), Save as Test (including Add to a Suite), line numbers, Insert Variable, variable copy/reveal/filter, response meta, JSON/Text, copy, expand
+- [x] Assertions panel: one row per line with operator menu, value, unit, delete, Templates and Add Assertion
+- [x] Test Suites: the workspace's `.ztest` files, run on the core runner with Stop and Stop at First Failure, live results with Request/Response/Logs/Assertions, Test Cases, Configuration, History and Artifacts tabs, Export Report (HTML, JSON, JUnit), New Suite
+- [x] Load Tests on `load.Engine`: settings with units and advanced options, live stat cards and six charts (CPU and memory are ZTest's own), endpoint results, saved configurations from history
+- [x] Reports, Environments and Settings pages; environment menu, notifications and Ctrl+K search in the top bar
+- [x] Cancel a running suite between and during requests (`Runner.cancel`)
+
+Under Wine, Zig 0.17's networking fails before connecting, so live sends, suite runs
+that send requests and load tests were verified with `zig build test` on Linux; the
+pages themselves were checked under Wine against the mockups.
 
 ---
 
@@ -356,10 +375,9 @@ Authorization: Bearer {{token}}
 ## Phase 9 — Desktop UI Foundation
 
 The Windows Win32/GDI+ shell provides a window, render loop, mouse navigation,
-DPI handling, dark styling, and routed screens. Native API controls support
-keyboard navigation; other sample screens still need complete keyboard support.
-Navigation entries below track routing, not functional screen completion. API
-Tests sends real requests with editable headers and None/Raw/JSON bodies.
+DPI handling, dark styling, and routed screens. Every page shows real data:
+API Tests sends requests, Test Suites runs the workspace's suites, Load Tests runs
+the load engine, and Dashboard and Reports read the run history.
 
 ### Integration
 
@@ -367,7 +385,7 @@ Tests sends real requests with editable headers and None/Raw/JSON bodies.
 - [x] Evaluate cross-platform GUI support, including zgui compatibility (`docs/UI_PLATFORM.md`)
 - [x] Create application window
 - [x] Render loop
-- [-] Keyboard input (API controls and Ctrl+1–7 page navigation implemented)
+- [x] Keyboard input (API controls, page fields, Ctrl+1–7 pages, Ctrl+K search)
 - [x] Mouse input
 - [x] DPI scaling
 
@@ -379,22 +397,22 @@ Tests sends real requests with editable headers and None/Raw/JSON bodies.
 - [x] spacing
 - [x] buttons
 - [x] native API inputs
-- [-] tables (sample data only)
+- [x] tables
 - [x] tabs
 - [ ] modal
-- [ ] toast
+- [x] toast
 - [x] status badge
 
 ### Navigation
 
 - [x] Sidebar routing
-- [x] Dashboard route (sample data)
+- [x] Dashboard route (run history)
 - [x] API Tests route (live requests, auth, environments, assertions, save/open)
-- [x] Test Suites route (sample data)
-- [x] Load Tests route (sample data)
-- [x] Reports route (placeholder)
-- [x] Environments route (placeholder)
-- [x] Settings route (placeholder)
+- [x] Test Suites route (runs suites live)
+- [x] Load Tests route (runs load tests live)
+- [x] Reports route (exported reports and run history)
+- [x] Environments route (`ztest.json` variables per environment)
+- [x] Settings route (version, workspace, limits, shortcuts)
 
 ---
 
@@ -458,7 +476,7 @@ Tests sends real requests with editable headers and None/Raw/JSON bodies.
 The live response viewer supports text selection, copying, and scrolling.
 Requests have a 30-second timeout and a 4 MiB response limit; previews mark
 truncation above 64 KiB. `ztest.json` is read from the open file's folder or the
-nearest parent. Dashboard, suite, and load screens remain illustrative.
+nearest parent.
 
 ---
 
@@ -468,8 +486,8 @@ Assertions are edited as text in the Tests tab, one per line, which covers
 adding, deleting, duplicating and reordering. Results show failures first.
 
 - [x] Add assertion button (Edit Assertions focuses the Tests editor)
-- [ ] Assertion type selector (typed today)
-- [ ] Operator selector (typed today)
+- [-] Assertion type selector (Templates and Add Assertion add each type; the target is typed)
+- [x] Operator selector
 - [x] Expected value
 - [x] Actual value
 - [x] Passed state
@@ -484,15 +502,15 @@ adding, deleting, duplicating and reordering. Results show failures first.
 
 ### Suite Management
 
-- [ ] Create suite
+- [x] Create suite (New Suite writes a starter file)
 - [ ] Rename suite
 - [ ] Delete suite
 - [ ] Duplicate suite
 
 ### Tests
 
-- [ ] Add test
-- [ ] Edit test
+- [x] Add test (Save as Test → Add to a Suite)
+- [x] Edit test (open it in API Tests)
 - [ ] Delete test
 - [ ] Duplicate test
 - [ ] Reorder test
@@ -501,35 +519,35 @@ adding, deleting, duplicating and reordering. Results show failures first.
 
 ### Execution
 
-- [ ] Run suite
-- [ ] Stop suite
-- [ ] Progress bar
-- [ ] Passed count
-- [ ] Failed count
-- [ ] Skipped count
-- [ ] Duration
+- [x] Run suite (and Run All on the Dashboard)
+- [x] Stop suite
+- [x] Progress bar
+- [x] Passed count
+- [x] Failed count
+- [x] Skipped count
+- [x] Duration
 
 ### Result Details
 
-- [ ] Request
-- [ ] Response
-- [ ] Logs
-- [ ] Assertions
-- [ ] Failure reason
+- [x] Request
+- [x] Response
+- [x] Logs
+- [x] Assertions
+- [x] Failure reason
 
 ---
 
 ## Phase 13 — Test History
 
-- [ ] Save execution
+- [x] Save execution (desktop runs, in `.ztest/history.jsonl`)
 - [ ] Run ID
-- [ ] Timestamp
-- [ ] Environment
-- [ ] Result
-- [ ] Duration
+- [x] Timestamp
+- [x] Environment
+- [x] Result
+- [x] Duration
 - [ ] Failure details
-- [ ] Request metrics
-- [ ] History UI
+- [x] Request metrics
+- [x] History UI (Dashboard, Reports, a suite's History tab)
 - [ ] Delete history
 - [ ] Clear history
 
@@ -585,40 +603,40 @@ adding, deleting, duplicating and reordering. Results show failures first.
 
 ## Phase 16 — Load Testing UI
 
-- [ ] Endpoint
-- [ ] Virtual users
-- [ ] Duration
-- [ ] Ramp-up
-- [ ] Start
-- [ ] Stop
+- [x] Endpoint
+- [x] Virtual users
+- [x] Duration
+- [x] Ramp-up
+- [x] Start
+- [x] Stop
 
 ### Live Metrics
 
-- [ ] RPS
-- [ ] Active users
-- [ ] Success
-- [ ] Failure
-- [ ] Average latency
+- [x] RPS
+- [x] Active users
+- [x] Success
+- [x] Failure
+- [x] Average latency (median while running)
 
 ### Charts
 
-- [ ] Request rate
-- [ ] p50
-- [ ] p95
-- [ ] p99
-- [ ] error rate
-- [ ] active VUs
+- [x] Request rate
+- [x] p50
+- [x] p95
+- [x] p99
+- [x] error rate
+- [x] active VUs
 
 ### Results Table
 
-- [ ] Endpoint
-- [ ] Method
-- [ ] Requests
-- [ ] RPS
-- [ ] Average
-- [ ] p95
-- [ ] p99
-- [ ] Error %
+- [x] Endpoint
+- [x] Method
+- [x] Requests
+- [x] RPS
+- [x] Average
+- [x] p95
+- [x] p99
+- [x] Error %
 
 ---
 
@@ -708,12 +726,12 @@ ZTest V1 must provide:
 
 - [x] API testing
 - [x] CLI
-- [-] desktop application (Windows API Tests works; suites, load and other platforms pending)
+- [-] desktop application (every Windows page works; other platforms pending)
 - [x] assertions
 - [x] reusable test suites
 - [x] variables
 - [x] environments
-- [-] load testing (CLI done; desktop screen and scenarios pending)
+- [-] load testing (CLI and desktop done; scenarios pending)
 - [x] metrics
 - [x] reports
 - [x] CI integration

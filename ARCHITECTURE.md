@@ -24,7 +24,7 @@ src/core/runner/   suite execution and {{variable}} replacement
 src/core/report/   run results kept for JSON, JUnit and HTML reports
 src/core/load/     load engine: virtual users, rate limit, histograms
 src/core/fuzz_test.zig  fuzz and seeded-mutation tests for untrusted input
-src/ui/            ZTest desktop UI (Windows), in progress
+src/ui/            ZTest desktop UI (Windows)
 examples/          demo.zig passes; failures.zig fails on purpose;
                    api/ holds runnable .ztest suites and an echo server
 ui/, docs/assets/  ZTest desktop mockups
@@ -155,6 +155,28 @@ atomics. `finish` joins the users and merges their statistics.
   runs on a thread of `std.Io.Threaded`.
 - **Ctrl-C** stops new requests; requests in flight finish or time out, and the
   partial results are printed.
+
+## Desktop pages
+
+The window repaints every page from `State` (layout choices) and `Model`
+(`ui/model.zig`: the request session, workspace, suites, load test and history).
+Pages only paint and record what a click asks for; `ui/main.zig` runs those
+actions after the paint, so menus (`ui/native.zig`) and file dialogs never run
+inside `WM_PAINT`. Inputs on pages other than API Tests are native edit and combo
+boxes from `ui/fields.zig`, placed each frame where the page drew their frames.
+
+- `ui/suite_run.zig` finds the `.ztest` files beside `ztest.json` and runs one on
+  the core runner in an `Io.concurrent` task. The runner publishes each finished
+  case through an atomic count, so the page reads results while the run goes on;
+  Stop sets `Runner.cancel`, which also cancels the request in flight.
+- `ui/load_run.zig` drives `load.Engine` and takes a sample each second from its
+  shared live histogram for the charts.
+- `core/history.zig` appends suite, test, load and request results to
+  `.ztest/history.jsonl` in the workspace, keeping the latest 2000. The
+  Dashboard, Reports and a suite's History tab read it.
+
+These modules and the assertion rows (`ui/assertion_rows.zig`) have no Win32 code
+and are tested on Linux with the CLI tests.
 
 ## Desktop API requests
 

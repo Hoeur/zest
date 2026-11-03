@@ -40,6 +40,10 @@ pub const CaseResult = struct {
     /// Parallel to `case.expects`, and empty if the request did not finish.
     assertions: []const evaluate.Result = &.{},
     failure: ?Failure = null,
+    /// What was sent, with variables replaced, when the request was built.
+    request: ?Request = null,
+    /// What came back, when the exchange finished.
+    response: ?Response = null,
 };
 
 /// Counts tests. A failed hook also counts as failed, so it cannot pass a run.
@@ -75,6 +79,9 @@ pub const Runner = struct {
     summary: Summary = .{},
     /// Later tests are not run, though a started suite's teardown still is.
     stopped: bool = false,
+    /// Set from another thread to stop the run, as Ctrl-C does for the CLI.
+    /// The request in flight is cancelled and the rest are not run.
+    cancel: ?*const std.atomic.Value(bool) = null,
 
     /// Tests run in file order. A failed setup stops that suite's tests, and
     /// teardown follows even then, because setup may have created something.
@@ -92,13 +99,17 @@ pub const Runner = struct {
         };
 
         for (suite.tests) |*case| switch (case.mode) {
-            .disabled => {},
-            .skip => try r.finish(.{ .case = case, .is_hook = false, .status = .skipped }, listener),
-            .run => if (blocked or r.stopped) {
+            .run => if (r.cancelled()) {
+                r.summary.interrupted = true;
+                r.stopped = true;
+                try r.finish(.{ .case = case, .is_hook = false, .status = .not_run }, listener);
+            } else if (blocked or r.stopped) {
                 try r.finish(.{ .case = case, .is_hook = false, .status = .not_run }, listener);
             } else {
                 _ = try r.runCase(case, false, &state, listener);
             },
+            .disabled => {},
+            .skip => try r.finish(.{ .case = case, .is_hook = false, .status = .skipped }, listener),
         };
 
         // Ctrl-C asked to leave, and any request sent now would be cancelled.
@@ -114,6 +125,7 @@ pub const Runner = struct {
 
         var result: CaseResult = .{ .case = case, .is_hook = is_hook, .status = .passed };
         var run: CaseRun = .{
+            .cancel = r.cancel,
             .client = r.client,
             .arena = case_arena.allocator(),
             .case = case,
@@ -123,6 +135,8 @@ pub const Runner = struct {
         const io = r.client.io;
         const start: Io.Timestamp = .now(io, .awake);
         try run.execute();
+        result.request = run.request;
+        result.response = run.response;
         result.duration_ns = @intCast(start.untilNow(io, .awake).toNanoseconds());
 
         if (result.status == .not_run) {
@@ -133,6 +147,11 @@ pub const Runner = struct {
         }
         try r.finish(result, listener);
         return result.status;
+    }
+
+    fn cancelled(r: *const Runner) bool {
+        const flag = r.cancel orelse return false;
+        return flag.load(.acquire);
     }
 
     /// Takes every test's values, so none shows up in another test's result.
@@ -193,6 +212,9 @@ const SuiteState = struct {
 
 /// One case's request, checks and extracts. Each problem lands on `result`.
 const CaseRun = struct {
+    cancel: ?*const std.atomic.Value(bool) = null,
+    request: ?Request = null,
+    response: ?Response = null,
     client: *http.Client,
     arena: Allocator,
     case: *const ast.Case,
@@ -204,7 +226,8 @@ const CaseRun = struct {
         const request = try c.buildRequest() orelse return;
         const assertions = try c.buildAssertions() orelse return;
 
-        const response = c.client.send(c.arena, request) catch |err| switch (err) {
+        c.request = request;
+        const response = c.client.sendCancelable(c.arena, request, c.cancel) catch |err| switch (err) {
             error.OutOfMemory => |e| return e,
             error.Interrupted => {
                 c.result.status = .not_run;
@@ -213,6 +236,7 @@ const CaseRun = struct {
             else => return c.fail(c.case.request.line, "{s}", .{http.describe(err)}),
         };
 
+        c.response = response;
         try c.noteSecrets(response);
         c.result.assertions = try evaluate.evaluate(c.arena, response, assertions, c.state.runner.secrets.items);
         // A later request would fail on this one's mistake, not its own.

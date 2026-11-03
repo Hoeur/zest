@@ -149,16 +149,22 @@ pub const Session = struct {
     /// The caller owns the preview. Bound text passed to the native edit control,
     /// normalize newlines, and replace embedded control characters safely.
     pub fn preview(s: *const Session, allocator: std.mem.Allocator, view: View) ![]const u8 {
-        if (s.secrets.len == 0) return s.previewText(allocator, view);
+        return s.previewFormatted(allocator, view, false);
+    }
+
+    /// `pretty` indents a JSON body; other views and other bodies are as
+    /// they came.
+    pub fn previewFormatted(s: *const Session, allocator: std.mem.Allocator, view: View, pretty: bool) ![]const u8 {
         // Secrets from the environment can come back in a response, such as
         // an echoed token, so they are hidden from every view.
         var scratch: std.heap.ArenaAllocator = .init(allocator);
         defer scratch.deinit();
-        const text = try s.previewText(scratch.allocator(), view);
+        const text = try s.previewText(scratch.allocator(), view, pretty);
+        if (s.secrets.len == 0) return allocator.dupe(u8, text);
         return allocator.dupe(u8, try redact(scratch.allocator(), text, s.secrets));
     }
 
-    fn previewText(s: *const Session, allocator: std.mem.Allocator, view: View) ![]const u8 {
+    fn previewText(s: *const Session, allocator: std.mem.Allocator, view: View, pretty: bool) ![]const u8 {
         if (s.phase != .completed) return allocator.dupe(u8, s.message());
         const response = s.response.?;
         var out: Io.Writer.Allocating = .init(allocator);
@@ -177,7 +183,8 @@ pub const Session = struct {
                     try out.writer.writeAll("\r\n");
                 }
                 if (response.body.len == 0 and view == .body) return allocator.dupe(u8, "(empty response body)");
-                try writePreview(&out.writer, response.body);
+                const body = if (pretty and view == .body) indented(allocator, response.body) orelse response.body else response.body;
+                try writePreview(&out.writer, body);
             },
             .headers => {
                 for (response.headers) |header| {
@@ -205,6 +212,15 @@ pub const Session = struct {
         return allocator.dupe(u8, out.written());
     }
 };
+
+/// The body indented when it is JSON, with numbers kept exactly. Null when
+/// it is not JSON or is too large to bother.
+fn indented(allocator: std.mem.Allocator, body: []const u8) ?[]const u8 {
+    if (body.len > preview_limit) return null;
+    const value = std.json.parseFromSliceLeaky(std.json.Value, allocator, body, .{ .parse_numbers = false }) catch return null;
+    if (value != .object and value != .array) return null;
+    return std.json.Stringify.valueAlloc(allocator, value, .{ .whitespace = .indent_2 }) catch null;
+}
 
 fn writePreview(out: *Io.Writer, text: []const u8) !void {
     if (!std.unicode.utf8ValidateSlice(text)) {

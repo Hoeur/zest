@@ -104,6 +104,34 @@ pub const SW_HIDE = 0;
 pub const ES_PASSWORD = 0x0020;
 pub const EM_SETPASSWORDCHAR = 0x00CC;
 pub const WM_APP = 0x8000;
+pub const WM_MOUSELEAVE = 0x02A3;
+pub const EN_VSCROLL = 0x0602;
+pub const EM_GETSEL = 0x00B0;
+pub const EM_GETLINECOUNT = 0x00BA;
+pub const EM_LINEINDEX = 0x00BB;
+pub const EM_REPLACESEL = 0x00C2;
+pub const EM_LINEFROMCHAR = 0x00C9;
+pub const EM_GETFIRSTVISIBLELINE = 0x00CE;
+pub const EM_POSFROMCHAR = 0x00D6;
+pub const MF_STRING = 0x0000;
+pub const MF_GRAYED = 0x0001;
+pub const MF_CHECKED = 0x0008;
+pub const MF_SEPARATOR = 0x0800;
+pub const TPM_RETURNCMD = 0x0100;
+pub const TPM_NONOTIFY = 0x0080;
+pub const CF_UNICODETEXT = 13;
+pub const GMEM_MOVEABLE = 0x0002;
+pub const FileTime = extern struct { low: u32 = 0, high: u32 = 0 };
+pub const SystemTime = extern struct {
+    year: u16 = 0,
+    month: u16 = 0,
+    day_of_week: u16 = 0,
+    day: u16 = 0,
+    hour: u16 = 0,
+    minute: u16 = 0,
+    second: u16 = 0,
+    milliseconds: u16 = 0,
+};
 pub const CB_GETCOUNT = 0x0146;
 
 pub const OpenFileName = extern struct {
@@ -185,6 +213,22 @@ pub extern "user32" fn DestroyWindow(hwnd: Handle) callconv(.winapi) i32;
 pub extern "user32" fn PostMessageW(hwnd: Handle, msg: u32, wparam: usize, lparam: isize) callconv(.winapi) i32;
 pub extern "user32" fn SetWindowLongPtrW(hwnd: Handle, index: i32, value: isize) callconv(.winapi) isize;
 pub extern "user32" fn GetWindowLongPtrW(hwnd: Handle, index: i32) callconv(.winapi) isize;
+
+pub extern "user32" fn CreatePopupMenu() callconv(.winapi) Handle;
+pub extern "user32" fn AppendMenuW(menu: Handle, flags: u32, id: usize, text: ?[*:0]const u16) callconv(.winapi) i32;
+pub extern "user32" fn TrackPopupMenu(menu: Handle, flags: u32, x: i32, y: i32, reserved: i32, hwnd: Handle, rect: ?*const Rect) callconv(.winapi) i32;
+pub extern "user32" fn DestroyMenu(menu: Handle) callconv(.winapi) i32;
+pub extern "user32" fn ClientToScreen(hwnd: Handle, point: *Point) callconv(.winapi) i32;
+pub extern "user32" fn OpenClipboard(hwnd: Handle) callconv(.winapi) i32;
+pub extern "user32" fn EmptyClipboard() callconv(.winapi) i32;
+pub extern "user32" fn SetClipboardData(format: u32, memory: Handle) callconv(.winapi) Handle;
+pub extern "user32" fn CloseClipboard() callconv(.winapi) i32;
+pub extern "kernel32" fn GlobalAlloc(flags: u32, bytes: usize) callconv(.winapi) Handle;
+pub extern "kernel32" fn GlobalLock(memory: Handle) callconv(.winapi) ?*anyopaque;
+pub extern "kernel32" fn GlobalUnlock(memory: Handle) callconv(.winapi) i32;
+pub extern "kernel32" fn GlobalFree(memory: Handle) callconv(.winapi) Handle;
+pub extern "kernel32" fn FileTimeToLocalFileTime(utc: *const FileTime, local: *FileTime) callconv(.winapi) i32;
+pub extern "kernel32" fn FileTimeToSystemTime(time: *const FileTime, system: *SystemTime) callconv(.winapi) i32;
 
 pub extern "comdlg32" fn GetOpenFileNameW(info: *OpenFileName) callconv(.winapi) i32;
 pub extern "comdlg32" fn GetSaveFileNameW(info: *OpenFileName) callconv(.winapi) i32;
@@ -271,3 +315,25 @@ pub extern "gdiplus" fn GdipSetStringFormatLineAlign(format: Handle, alignment: 
 pub extern "gdiplus" fn GdipSetStringFormatTrimming(format: Handle, trimming: i32) callconv(.winapi) i32;
 pub extern "gdiplus" fn GdipDrawString(graphics: Handle, text: [*]const u16, length: i32, font: Handle, layout: *const RectF, format: Handle, brush: Handle) callconv(.winapi) i32;
 pub extern "gdiplus" fn GdipMeasureString(graphics: Handle, text: [*]const u16, length: i32, font: Handle, layout: *const RectF, format: Handle, box: *RectF, code_points: ?*i32, lines: ?*i32) callconv(.winapi) i32;
+
+// The app's own CPU time and memory, for the load test charts.
+pub const EN_SETFOCUS = 0x0100;
+pub const EN_KILLFOCUS = 0x0200;
+pub const ProcessMemoryCounters = extern struct {
+    cb: u32 = @sizeOf(ProcessMemoryCounters),
+    PageFaultCount: u32 = 0,
+    PeakWorkingSetSize: usize = 0,
+    WorkingSetSize: usize = 0,
+    QuotaPeakPagedPoolUsage: usize = 0,
+    QuotaPagedPoolUsage: usize = 0,
+    QuotaPeakNonPagedPoolUsage: usize = 0,
+    QuotaNonPagedPoolUsage: usize = 0,
+    PagefileUsage: usize = 0,
+    PeakPagefileUsage: usize = 0,
+};
+pub extern "kernel32" fn GetCurrentProcess() callconv(.winapi) Handle;
+pub extern "kernel32" fn GetProcessTimes(process: Handle, creation: *FileTime, exit: *FileTime, kernel: *FileTime, user: *FileTime) callconv(.winapi) i32;
+pub extern "kernel32" fn K32GetProcessMemoryInfo(process: Handle, counters: *ProcessMemoryCounters, size: u32) callconv(.winapi) i32;
+pub extern "uxtheme" fn SetWindowTheme(hwnd: Handle, app: ?[*:0]const u16, list: ?[*:0]const u16) callconv(.winapi) i32;
+pub extern "kernel32" fn LoadLibraryW(name: [*:0]const u16) callconv(.winapi) Handle;
+pub extern "kernel32" fn GetProcAddress(module: Handle, name: ?*const anyopaque) callconv(.winapi) ?*const anyopaque;

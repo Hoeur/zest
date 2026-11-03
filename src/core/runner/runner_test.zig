@@ -547,3 +547,42 @@ test "a missing variable in auth fails the case without sending it" {
     try testing.expectEqualStrings("{{password}} is not defined", f.seen()[0].failure.?);
     try testing.expectEqual(0, f.sent());
 }
+
+test "results carry the request and response, and a cancel flag stops the run" {
+    var f: Fixture = .{ .server = try .listen(&.{token_reply}) };
+    try f.start(.{});
+    defer f.stop();
+
+    const Capture = struct {
+        arena: std.mem.Allocator,
+        url: []const u8 = "",
+        status: u16 = 0,
+        statuses: std.ArrayList(Status) = .empty,
+        flag: *std.atomic.Value(bool),
+
+        pub fn caseFinished(self: *@This(), result: runner.CaseResult) !void {
+            try self.statuses.append(self.arena, result.status);
+            if (result.request) |request| self.url = try self.arena.dupe(u8, request.url);
+            if (result.response) |response| self.status = response.status;
+            // Cancel after the first test, so the second is not run.
+            self.flag.store(true, .release);
+        }
+    };
+    var flag: std.atomic.Value(bool) = .init(false);
+    var capture: Capture = .{ .arena = f.arena.allocator(), .flag = &flag };
+    f.engine.cancel = &flag;
+
+    const arena = f.arena.allocator();
+    const text = try std.fmt.allocPrint(arena, "suite \"S\"\ntest \"one\"\nGET http://127.0.0.1:{d}/a\nend\ntest \"two\"\nGET http://127.0.0.1:{d}/b\nend\n", .{ f.server.port(), f.server.port() });
+    var diagnostic: parser.Diagnostic = .{};
+    const suite = try arena.create(ast.Suite);
+    suite.* = try parser.parse(arena, text, &diagnostic);
+    try f.engine.runSuite(suite, &capture);
+
+    try testing.expectEqual(2, capture.statuses.items.len);
+    try testing.expectEqual(Status.passed, capture.statuses.items[0]);
+    try testing.expectEqual(Status.not_run, capture.statuses.items[1]);
+    try testing.expect(std.mem.endsWith(u8, capture.url, "/a"));
+    try testing.expectEqual(200, capture.status);
+    try testing.expect(f.engine.summary.interrupted);
+}

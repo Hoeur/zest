@@ -6,6 +6,11 @@ const Server = @import("../core/http/client_test.zig").Server;
 test {
     _ = @import("json_tokens.zig");
     _ = @import("workspace.zig");
+    _ = @import("suite_run.zig");
+    _ = @import("load_run.zig");
+    _ = @import("timefmt.zig");
+    _ = @import("assertion_rows.zig");
+    _ = @import("fields.zig");
 }
 
 test "API mockup layout keeps the primary controls within a small window" {
@@ -258,4 +263,17 @@ test "an undefined desktop variable is named before anything is sent" {
     try testing.expectError(error.MissingVariable, session.startDraft(.{ .url = "{{baseUrl}}/x" }, 2000));
     try testing.expect(!session.busy());
     try testing.expect(std.mem.startsWith(u8, session.message(), "{{baseUrl}} is not defined"));
+}
+
+test "a JSON body can be shown indented" {
+    var session = api.Session.init(testing.allocator, testing.io);
+    defer session.deinit();
+    session.phase = .completed;
+    session.response = .{ .status = 200, .status_text = "OK", .headers = &.{}, .cookies = &.{}, .duration_ns = 1, .body = "{\"id\":12345678901234567890,\"ok\":true}" };
+    const text = try session.previewFormatted(testing.allocator, .body, true);
+    defer testing.allocator.free(text);
+    try testing.expectEqualStrings("{\r\n  \"id\": 12345678901234567890,\r\n  \"ok\": true\r\n}", text);
+    const raw = try session.previewFormatted(testing.allocator, .body, false);
+    defer testing.allocator.free(raw);
+    try testing.expectEqualStrings("{\"id\":12345678901234567890,\"ok\":true}", raw);
 }

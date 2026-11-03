@@ -1,4 +1,46 @@
-# API Builder Design Review
+# Desktop Design Review
+
+## Every page, live — 2026-11-03
+
+Each page was compared with its mockup in `ui/` side by side, using real data: a
+workspace copied from `examples/api` with a run history and one suite that runs
+without a network. Left is the mockup, right the app under Wine at 1448 × 1000.
+Wine draws no Segoe Fluent icons, so icons show as boxes there; on Windows they
+are the icons of the mockups.
+
+- Dashboard: `docs/design-qa/dashboard-live-comparison.jpg`
+- API Tests: `docs/design-qa/api-builder-live-comparison.jpg`
+- Test Suites: `docs/design-qa/test-suites-live-comparison.jpg`
+- Load Tests: `docs/design-qa/load-dashboard-live-comparison.jpg`
+
+What matches: the sidebar, top bar (search with Ctrl K, environment menu,
+notifications), page headers and their split buttons, the stat cards with
+sparklines and changes, the results trend and recent activity, the paged test-run
+table with suite filter and row menus; the API builder's header status, menus,
+line numbers, variable panel, response meta and the assertion rows with operator,
+value, unit and delete; the suite list with search and filters, totals,
+configuration cards, tabs, progress bar, result filters and expandable cases; the
+load settings, stat cards, six live charts and endpoint table.
+
+Deliberate differences:
+
+- No Pro upgrade card or account avatar: ZTest has neither.
+- Test Suites shows **Open** where the mockup has **Schedule**, and a **Last Run**
+  card where it has **Scheduled Run**: suites are not scheduled. Results are a flat
+  list, as `.ztest` files have no groups.
+- The load charts for CPU and memory are ZTest's own (the load generator's), since
+  the app cannot see the server.
+- Native menus, file dialogs and edit scroll bars follow Windows; the app asks for
+  dark menus and scroll bars on Windows 10 1809 and later.
+
+Not verifiable under Wine: Zig 0.17's networking fails there before connecting,
+so sending, suites that send requests and load tests were covered by
+`zig build test` on Linux instead (runner cancellation, the desktop suite run, the
+desktop load run and history).
+
+---
+
+# API Builder Design Review (2026-10-31)
 
 ## Scope and evidence
 

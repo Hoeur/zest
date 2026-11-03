@@ -228,6 +228,10 @@ pub const Engine = struct {
     finished: Atomic(u32) = .init(0),
     stopping: Atomic(bool) = .init(false),
     interrupted: Atomic(bool) = .init(false),
+    /// A coarse, shared latency histogram, so a live view can take the
+    /// difference of two snapshots and chart percentiles as the run goes.
+    live: [live_buckets]Atomic(u32) = @splat(.init(0)),
+    peak_users: Atomic(u32) = .init(0),
 
     const User = struct {
         engine: *Engine,
@@ -281,6 +285,12 @@ pub const Engine = struct {
             .failed = e.failed.load(.monotonic),
             .active_users = e.active.load(.monotonic),
         };
+    }
+
+    /// Copies the live histogram. Subtract an earlier copy to get the
+    /// latencies of the requests that finished in between.
+    pub fn liveSnapshot(e: *const Engine, out: *[live_buckets]u64) void {
+        for (out, &e.live) |*n, *bucket| n.* = bucket.load(.monotonic);
     }
 
     /// Waits for every user and merges their statistics. Call once.
@@ -348,7 +358,8 @@ pub const Engine = struct {
         const offset: i96 = if (config.users <= 1) 0 else @divTrunc(@as(i96, config.ramp_up_ms) * std.time.ns_per_ms * user.index, config.users);
         if (!e.waitUntil(e.start_ns + offset)) return;
 
-        _ = e.active.fetchAdd(1, .monotonic);
+        const active = e.active.fetchAdd(1, .monotonic) + 1;
+        _ = e.peak_users.fetchMax(active, .monotonic);
         defer _ = e.active.fetchSub(1, .monotonic);
 
         var client: http.Client = .init(e.gpa, e.io);
@@ -394,6 +405,7 @@ pub const Engine = struct {
             stats.bytes_received += responseSize(response);
             stats.status_classes[@min(5, response.status / 100)] += 1;
             stats.latency.record(latency_us);
+            _ = e.live[liveBucket(latency_us)].fetchAdd(1, .monotonic);
             if (passed) {
                 stats.succeeded += 1;
             } else {
@@ -406,6 +418,41 @@ pub const Engine = struct {
         }
     }
 };
+
+/// Buckets of the live histogram: four per power of two of microseconds, so
+/// about 19% wide, up to about 70 minutes.
+pub const live_buckets = 128;
+
+pub fn liveBucket(us: u64) usize {
+    if (us < 4) return @intCast(us);
+    const msb: u6 = @intCast(63 - @clz(us));
+    const fraction: usize = @intCast((us >> (msb - 2)) & 3);
+    return @min(live_buckets - 1, @as(usize, msb) * 4 + fraction);
+}
+
+/// The highest latency in microseconds that `index` holds.
+pub fn liveUpper(index: usize) u64 {
+    // Indexes 4 to 7 are never used: 4µs and up start at index 8.
+    if (index < 8) return @min(index, 3);
+    const msb: u6 = @intCast(index / 4);
+    const fraction: u64 = index % 4;
+    return ((4 + fraction + 1) << (msb - 2)) - 1;
+}
+
+/// A percentile, in microseconds, of `counts` from `liveSnapshot`
+/// differences. Zero when nothing was counted.
+pub fn livePercentile(counts: []const u64, percent: f64) u64 {
+    var total: u64 = 0;
+    for (counts) |n| total += n;
+    if (total == 0) return 0;
+    const wanted: u64 = @max(1, @as(u64, @intFromFloat(@ceil(@as(f64, @floatFromInt(total)) * percent / 100.0))));
+    var seen: u64 = 0;
+    for (counts, 0..) |n, i| {
+        seen += n;
+        if (seen >= wanted) return liveUpper(i);
+    }
+    return liveUpper(counts.len - 1);
+}
 
 /// An estimate of the bytes on the wire for one request: the request line,
 /// headers and body. TLS and framing are not counted.
@@ -495,4 +542,18 @@ test "stats merge every counter" {
     try testing.expectEqual(4, a.status_classes[2]);
     try testing.expectEqual(1, a.problems.get(.timeout));
     try testing.expectEqual(10, a.bytes_received);
+}
+
+test "live buckets cover every latency and percentiles read them back" {
+    for ([_]u64{ 0, 3, 4, 7, 100, 1500, 250_000, 60_000_000 }) |us| {
+        const i = liveBucket(us);
+        try testing.expect(liveUpper(i) >= us);
+        if (i > 4) try testing.expect(liveUpper(i - 1) < us);
+    }
+    var counts: [live_buckets]u64 = @splat(0);
+    for (0..90) |_| counts[liveBucket(1000)] += 1;
+    for (0..10) |_| counts[liveBucket(50_000)] += 1;
+    try testing.expect(livePercentile(&counts, 50) >= 1000 and livePercentile(&counts, 50) < 1300);
+    try testing.expect(livePercentile(&counts, 99) >= 50_000);
+    try testing.expectEqual(0, livePercentile(&@as([4]u64, @splat(0)), 50));
 }

@@ -104,15 +104,24 @@ pub const State = struct {
     body_type: usize = 0,
     /// Index into the Auth tab's types, mirrored from its selector.
     auth_kind: usize = 0,
+    /// The first assertion row shown, for scrolling the Assertions panel.
+    assert_offset: usize = 0,
+    /// Load Tests: whether Advanced Options are open.
+    load_advanced: bool = false,
+    /// Test Suites: the suite shown, by catalog index, and its result filter.
+    suite_search_changed: bool = false,
     response_tab: usize = 0,
+    /// Dashboard: the Recent Test Runs page, and the days the trend covers.
+    runs_page: usize = 0,
+    trend_days: usize = 7,
 
     suite: usize = 0,
     suite_filter: SuiteFilter = .all,
     suite_tab: usize = 0,
     result_filter: ResultFilter = .all,
     open_group: ?usize = 1,
-    open_test: ?usize = 3,
-    detail_tab: usize = 2,
+    open_test: ?usize = null,
+    detail_tab: usize = 0,
 
     pub fn navigate(s: *State, screen: Screen) void {
         if (s.screen == screen) return;

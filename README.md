@@ -23,7 +23,7 @@
 
 ## 📍 Current State
 
-> **Parts of this README describe the planned product.** What runs today is listed here; the Load Testing UI, history, and cross-platform desktop builds are still design targets.
+> **Parts of this README describe the planned product.** What runs today is listed here; cross-platform desktop builds are still a design target.
 
 What exists today:
 
@@ -32,7 +32,7 @@ What exists today:
 - **`ztest load`** runs virtual users against one request with ramp-up and an optional rate limit, and prints RPS, failures and p50/p90/p95/p99 latency; `--report json` adds a per-second series.
 - **`ztest init`** writes a starter `ztest.json` and `tests/example.ztest`.
 - **`zest`**: a small unit-test library for Zig, in `src/root.zig`.
-- **Desktop app** (Windows only): `zig build ui`. **API Tests** is a working request builder: method, URL, **Params** (`name=value` lines), **Headers** (`Name: value` lines), **Auth** (Basic, Bearer, API key in a header or query, with masked keys), **Body** (none, raw text or JSON), and **Tests** (one assertion per line, results in the Assertions panel). Start a Params, Headers or Tests line with `#` to switch it off. `{{variables}}` come from the nearest `ztest.json`; pick the environment in the top bar, and secrets are masked in the variable list and in responses. **Open** and **Save** read and write `.ztest` files, and a suite's tests can be stepped through with the `<` `>` buttons. Dashboard, Test Suites and Load Tests still show sample data.
+- **Desktop app** (Windows only): `zig build ui`. **API Tests** is a working request builder: method, URL, **Params** (`name=value` lines), **Headers** (`Name: value` lines), **Auth** (Basic, Bearer, API key in a header or query, with masked keys), **Body** (none, raw text or JSON), and **Tests** (one assertion per line, results in the Assertions panel). Start a Params, Headers or Tests line with `#` to switch it off. `{{variables}}` come from the nearest `ztest.json`; pick the environment in the top bar, and secrets are masked in the variable list and in responses. **Open** and **Save** read and write `.ztest` files, and a suite's tests can be stepped through with the `<` `>` buttons. **Test Suites** lists the `.ztest` files beside `ztest.json` and runs them with live results, Stop, and Export Report (HTML, JSON or JUnit). **Load Tests** runs virtual users with live charts. **Dashboard** and **Reports** read the run history the app keeps in `.ztest/history.jsonl`; **Environments** shows each environment's variables.
 
 Desktop keyboard controls: **Ctrl+1–7** opens sidebar pages in order (**Ctrl+2**
 opens API Tests). In API Tests, **Tab/Shift+Tab** moves between visible, enabled
@@ -40,7 +40,8 @@ controls; **Space** activates focused request/response tabs and the None/Raw bod
 modes. The format selector uses the arrow keys. **Ctrl+A** selects editor text,
 and **Ctrl+Enter** sends or cancels a request from an editor. **Ctrl+S** saves,
 **Ctrl+Shift+S** saves as, **Ctrl+O** opens, **Ctrl+N** starts a new request, and
-**Ctrl+Page Up/Down** steps through the tests of an open suite.
+**Ctrl+Page Up/Down** steps through the tests of an open suite. **Ctrl+K** searches
+suites from any page, and **Enter** in a Load Tests field starts the test.
 
 Quick start:
 

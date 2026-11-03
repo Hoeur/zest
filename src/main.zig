@@ -33,6 +33,7 @@ test {
     _ = @import("core/parser/parser.zig");
     _ = @import("core/parser/writer.zig");
     _ = @import("core/fuzz_test.zig");
+    _ = @import("core/history.zig");
     _ = @import("core/runner/variables.zig");
     _ = @import("core/runner/runner_test.zig");
     _ = @import("core/http/request.zig");
