@@ -19,6 +19,7 @@ pub const help =
     \\       ztest api <method> <url> [api options]
     \\       ztest run <file or directory>... [run options]
     \\       ztest load [method] <url> [api options] [load options]
+    \\       ztest load --scenario <file.ztest> [--env <name>] [load options]
     \\       ztest init [directory]
     \\
     \\Options:
@@ -52,7 +53,8 @@ pub const help =
     \\      --ramp-up <time>         Start users evenly over this time
     \\      --rps <n>                Hold all users to this many requests a second
     \\      --report json[=path]     Also write the results as JSON
-    \\  API options apply, except --raw. --assert marks a response as failed.
+    \\  A scenario takes its requests and assertions from the suite.
+    \\  For a single URL, API options apply except --raw.
     \\
     \\Times take ms, s, m or h, such as 500ms, 30s, 5m or 1h.
     \\
@@ -84,6 +86,7 @@ pub const Options = struct {
 };
 
 pub const Load = struct {
+    scenario: ?[]const u8 = null,
     users: u32 = 10,
     duration_ms: u64 = 10_000,
     ramp_up_ms: u64 = 0,
@@ -107,6 +110,7 @@ pub fn parse(arena: Allocator, args: []const [:0]const u8, bad_arg: *[]const u8)
     var paths: std.ArrayList([]const u8) = .empty;
     var reports: std.ArrayList(report.Target) = .empty;
     var has_directory = false;
+    var load_request_flags = false;
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
@@ -163,11 +167,18 @@ pub fn parse(arena: Allocator, args: []const [:0]const u8, bad_arg: *[]const u8)
                 options.load.ramp_up_ms = parseTime(value) orelse return error.InvalidValue;
             } else if (std.mem.eql(u8, arg, "--rps")) {
                 options.load.rps = std.fmt.parseInt(u32, value, 10) catch return error.InvalidValue;
+            } else if (std.mem.eql(u8, arg, "--scenario")) {
+                if (options.load.scenario != null) return error.ConflictingFlags;
+                if (value.len == 0) return error.InvalidValue;
+                options.load.scenario = value;
+            } else if (is(arg, "-e", "--env")) {
+                options.environment = value;
             } else if (std.mem.eql(u8, arg, "--report")) {
                 const target = report.parseTarget(value) orelse return error.InvalidValue;
                 if (target.format != .json) return error.InvalidValue;
                 try reports.append(arena, target);
             } else if (isApiFlag(arg)) {
+                load_request_flags = true;
                 bad_arg.* = arg;
                 try api.flag(arena, arg, value, bad_arg);
             } else {
@@ -214,7 +225,15 @@ pub fn parse(arena: Allocator, args: []const [:0]const u8, bad_arg: *[]const u8)
             return error.UnknownArgument;
         }
     }
-    if (options.command == .api or options.command == .load) {
+    if (options.command == .load and options.load.scenario != null) {
+        bad_arg.* = "--scenario";
+        if (api.method != null or load_request_flags) return error.ConflictingFlags;
+        options.reports = reports.items;
+    } else if (options.command == .api or options.command == .load) {
+        if (options.command == .load and options.environment != null) {
+            bad_arg.* = "--env requires --scenario";
+            return error.ConflictingFlags;
+        }
         if (options.command == .load and api.method == null and api.url == null) api.method = .GET;
         options.request = try api.finish(bad_arg);
         options.assertions = api.assertions.items;
@@ -542,6 +561,28 @@ test "load reads a URL, request flags and load flags" {
     try testing.expectError(error.InvalidValue, parse(arena.allocator(), &.{ "load", "u", "--report", "junit" }, &bad_arg));
     try testing.expectError(error.UnknownArgument, parse(arena.allocator(), &.{ "load", "u", "--raw", "x" }, &bad_arg));
     try testing.expectError(error.MissingArgument, parse(arena.allocator(), &.{ "load", "-u", "5" }, &bad_arg));
+}
+
+test "load scenarios take a file and environment without request overrides" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var bad_arg: []const u8 = "";
+    const options = try parse(allocator, &.{
+        "load",    "--scenario", "tests/session.ztest", "--env", "local",
+        "--users", "4",          "--rps",               "12",    "--report",
+        "json",
+    }, &bad_arg);
+    try std.testing.expectEqualStrings("tests/session.ztest", options.load.scenario.?);
+    try std.testing.expectEqualStrings("local", options.environment.?);
+    try std.testing.expectEqual(null, options.request);
+    try std.testing.expectEqual(12, options.load.rps);
+    try std.testing.expectError(error.ConflictingFlags, parse(allocator, &.{
+        "load", "--scenario", "tests/session.ztest", "--timeout", "1000",
+    }, &bad_arg));
+    try std.testing.expectError(error.ConflictingFlags, parse(allocator, &.{
+        "load", "http://a.test", "--scenario", "tests/session.ztest",
+    }, &bad_arg));
 }
 
 test "times take a unit" {

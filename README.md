@@ -66,7 +66,20 @@ See the [suite and configuration reference](docs/TEST_FORMAT.md) and [CI example
 
 ## Load testing
 
-Run concurrent virtual users against one endpoint with an optional ramp-up and request-rate limit. ZTest reports throughput, failures, and latency percentiles. The desktop app charts progress live, and the CLI can export the results and per-second metrics as JSON.
+Run concurrent virtual users against one endpoint or a suite with an optional ramp-up and a shared request-rate limit. ZTest reports throughput, failures, and latency percentiles. The desktop app charts single-endpoint runs live, and the CLI can export either kind of run and its per-second metrics as JSON.
+
+Run a suite as a load scenario from the directory containing its `ztest.json`.
+
+```bash
+ztest load --scenario tests/basics.ztest --env local --users 5 \
+  --duration 30s --rps 20 --report json
+```
+
+Each user runs setup, enabled tests in file order, and teardown. Each iteration
+starts with fresh extracted variables. A failed step skips the remaining tests
+in that iteration and still allows teardown while the run is active. The rate
+limit counts every HTTP request, including hooks. An error before a case can
+issue a request stops that user and is reported separately from HTTP failures.
 
 ## Windows desktop app
 

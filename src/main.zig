@@ -119,13 +119,17 @@ fn execute(context: Context, options: cli.Options) !ExitCode {
             .version = build_options.version,
         }),
         .init => try init_command.run(context, out, options.directory),
-        .load => try load_command.run(context, out, options.request.?, options.assertions, .{
+        .load => try load_command.run(context, out, if (options.load.scenario) |path|
+            .{ .scenario = path }
+        else
+            .{ .request = .{ .request = options.request.?, .assertions = options.assertions } }, .{
             .users = options.load.users,
             .duration_ms = options.load.duration_ms,
             .ramp_up_ms = options.load.ramp_up_ms,
             .rps = options.load.rps,
             .reports = options.reports,
             .version = build_options.version,
+            .environment = options.environment,
         }),
     };
     try out.flush();
