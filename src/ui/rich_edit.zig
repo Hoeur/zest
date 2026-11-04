@@ -127,14 +127,20 @@ pub fn highlight(handle: win.Handle, enabled: bool) void {
     _ = win.SendMessageW(handle, c.EM_GETSCROLLPOS, 0, @bitCast(@intFromPtr(&scroll)));
     const modified = win.SendMessageW(handle, c.EM_GETMODIFY, 0, 0);
     const events = win.SendMessageW(handle, c.EM_SETEVENTMASK, 0, 0);
-    _ = win.SendMessageW(handle, c.WM_SETREDRAW, 0, 0);
+    // WM_SETREDRAW with TRUE also makes the window visible, which showed a
+    // hidden editor as a blank box over another page or tab. A hidden one
+    // has nothing to repaint, so it is left alone.
+    const visible = win.IsWindowVisible(handle) != 0;
+    if (visible) _ = win.SendMessageW(handle, c.WM_SETREDRAW, 0, 0);
     defer {
         _ = win.SendMessageW(handle, c.EM_EXSETSEL, 0, @bitCast(@intFromPtr(&selection)));
         _ = win.SendMessageW(handle, c.EM_SETSCROLLPOS, 0, @bitCast(@intFromPtr(&scroll)));
         _ = win.SendMessageW(handle, c.EM_SETMODIFY, @intFromBool(modified != 0), 0);
         _ = win.SendMessageW(handle, c.EM_SETEVENTMASK, 0, events);
-        _ = win.SendMessageW(handle, c.WM_SETREDRAW, 1, 0);
-        _ = win.InvalidateRect(handle, null, 0);
+        if (visible) {
+            _ = win.SendMessageW(handle, c.WM_SETREDRAW, 1, 0);
+            _ = win.InvalidateRect(handle, null, 0);
+        }
         if (win.GetFocus() != focus) _ = win.SetFocus(focus);
     }
     setColor(handle, c.SCF_ALL, theme.text);

@@ -231,6 +231,7 @@ pub extern "user32" fn DestroyMenu(menu: Handle) callconv(.winapi) i32;
 pub extern "user32" fn ClientToScreen(hwnd: Handle, point: *Point) callconv(.winapi) i32;
 pub extern "user32" fn ScreenToClient(hwnd: Handle, point: *Point) callconv(.winapi) i32;
 pub extern "user32" fn GetParent(hwnd: Handle) callconv(.winapi) Handle;
+pub extern "user32" fn IsWindowVisible(hwnd: Handle) callconv(.winapi) i32;
 pub extern "user32" fn SetCapture(hwnd: Handle) callconv(.winapi) Handle;
 pub extern "user32" fn ReleaseCapture() callconv(.winapi) i32;
 pub extern "user32" fn TrackMouseEvent(info: *TrackMouseEventInfo) callconv(.winapi) i32;
