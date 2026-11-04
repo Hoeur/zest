@@ -11,6 +11,19 @@
 
 ---
 
+## Release Packaging — 2026-11-04
+
+- [x] `zig build release`: every platform cross-compiled from one machine, packaged as `.zip`/`.tar.gz` with `SHA256SUMS` (`tools/package.zig`, standard library only, reproducible)
+- [x] Release workflow (`.github/workflows/release.yml`): tag check, dated changelog check, tests, archives, a run of each archive on its own platform, GitHub release
+- [x] CI cross-compiles every release target on each push
+- [x] `CHANGELOG.md`, `docs/INSTALL.md`, `docs/RELEASING.md`
+- [x] Fix the desktop app's build for Windows ARM64 (function-pointer alignment in `native.zig`)
+
+Next: date the `0.1.0-alpha` changelog section and push the `v0.1.0-alpha` tag
+to run the first release, then the dvui spike from `docs/UI_PLATFORM.md`.
+
+---
+
 ## Review Follow-up — 2026-11-03
 
 - [x] Add an MIT `LICENSE`
@@ -25,7 +38,7 @@
 - [x] Fuzz the parser, writer, assertions, drafts, config and templates; add an engine-wide request-size limit
 - [x] Evaluate cross-platform desktop UI (`docs/UI_PLATFORM.md`)
 
-Next: run the dvui spike from `docs/UI_PLATFORM.md` and release packaging.
+Next: run the dvui spike from `docs/UI_PLATFORM.md`. Release packaging is done (above).
 Smaller gaps: form-urlencoded and multipart bodies (core supports them, the format
 and desktop do not), proxy support, and scenario load tests from a `.ztest` suite.
 
@@ -703,20 +716,25 @@ adding, deleting, duplicating and reordering. Results show failures first.
 
 ## Phase 21 — Packaging
 
-- [ ] Windows x64
-- [ ] Windows ARM64
-- [ ] Linux x64
-- [ ] Linux ARM64
-- [ ] macOS Intel
-- [ ] macOS Apple Silicon
+All six are built by `zig build release`; the release workflow runs each on
+its own platform before publishing. Only Linux x64 has been run so far.
+
+- [x] Windows x64 (CLI and desktop app)
+- [x] Windows ARM64 (CLI and desktop app)
+- [x] Linux x64 (static, musl)
+- [x] Linux ARM64 (static, musl)
+- [x] macOS Intel
+- [x] macOS Apple Silicon (ad-hoc signed by the Zig linker)
 
 ### Release
 
-- [ ] version tag
-- [ ] changelog
-- [ ] release archive
-- [ ] checksums
-- [ ] installation documentation
+- [-] version tag (the workflow publishes on `v*` tags; `v0.1.0-alpha` not pushed yet)
+- [x] changelog (`CHANGELOG.md`; the workflow uses the tag's section as release notes)
+- [x] release archive
+- [x] checksums (`SHA256SUMS`)
+- [x] installation documentation (`docs/INSTALL.md`, `docs/RELEASING.md`)
+- [ ] code signing and notarization
+- [ ] package managers (winget, Homebrew, Scoop)
 
 ---
 
@@ -735,4 +753,4 @@ ZTest V1 must provide:
 - [x] metrics
 - [x] reports
 - [x] CI integration
-- [ ] cross-platform releases
+- [-] cross-platform releases (archives for all six targets; desktop app on Windows only; first tag pending)

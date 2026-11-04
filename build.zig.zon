@@ -2,6 +2,6 @@
     .name = .zest,
     .version = "0.1.0-alpha",
     .minimum_zig_version = "0.17.0",
-    .paths = .{ "build.zig", "build.zig.zon", "src", "examples", "README.md" },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "examples", "tools", "README.md", "LICENSE", "CHANGELOG.md" },
     .fingerprint = 0x38a0093f204a501b,
 }

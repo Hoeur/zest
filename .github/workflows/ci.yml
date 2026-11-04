@@ -22,13 +22,25 @@ jobs:
         with:
           version: 0.17.0
       - name: Check formatting
-        run: zig fmt --check build.zig src examples
+        run: zig fmt --check build.zig src examples tools
       - name: Unit and integration tests
         run: zig build test --summary all
       - name: Build release executables
         run: zig build -Doptimize=ReleaseSafe
       - name: CLI smoke test
         run: zig-out/bin/ztest --version
+
+  release:
+    name: Release archives
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      # Cross-compiles every platform, so a change that breaks one is caught here.
+      - run: zig build release --summary all
+      - run: cd zig-out/release && sha256sum -c SHA256SUMS
 
   examples:
     name: Example suites

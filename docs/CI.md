@@ -1,8 +1,9 @@
 # Running ZTest in CI
 
 `ztest` is one executable with stable exit codes, so any CI system can run it.
-Build it with Zig 0.17 (`zig build -Doptimize=ReleaseSafe`) or download a
-release, then run your suites and keep the reports.
+Download a release archive ([`INSTALL.md`](./INSTALL.md#in-ci)) or build it
+with Zig 0.17 (`zig build -Doptimize=ReleaseSafe`), then run your suites and
+keep the reports.
 
 ## What the CI step needs
 

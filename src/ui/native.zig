@@ -56,9 +56,9 @@ pub fn darkMenus() void {
     // The exports have these meanings from build 17763 on.
     if (info.dwMajorVersion < 10 or info.dwBuildNumber < 17763) return;
     const module = win.LoadLibraryW(std.unicode.utf8ToUtf16LeStringLiteral("uxtheme.dll")) orelse return;
-    const set_mode: *const fn (i32) callconv(.winapi) i32 = @ptrCast(win.GetProcAddress(module, @ptrFromInt(135)) orelse return);
+    const set_mode: *const fn (i32) callconv(.winapi) i32 = @ptrCast(@alignCast(win.GetProcAddress(module, @ptrFromInt(135)) orelse return));
     _ = set_mode(2); // Force dark.
-    const flush: *const fn () callconv(.winapi) void = @ptrCast(win.GetProcAddress(module, @ptrFromInt(136)) orelse return);
+    const flush: *const fn () callconv(.winapi) void = @ptrCast(@alignCast(win.GetProcAddress(module, @ptrFromInt(136)) orelse return));
     flush();
 }
 

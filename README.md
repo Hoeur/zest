@@ -43,7 +43,11 @@ and **Ctrl+Enter** sends or cancels a request from an editor. **Ctrl+S** saves,
 **Ctrl+Page Up/Down** steps through the tests of an open suite. **Ctrl+K** searches
 suites from any page, and **Enter** in a Load Tests field starts the test.
 
-Quick start:
+Install: download the archive for your platform from the
+[releases page](https://github.com/Hoeur/zest/releases) (Windows, Linux and
+macOS, x64 and ARM64), or build from source. See [`docs/INSTALL.md`](./docs/INSTALL.md).
+
+Quick start from source:
 
 ```bash
 zig build
@@ -946,7 +950,10 @@ Exit codes are stable (`0` passed, `1` failed, `2` configuration error, `3` inte
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | System architecture |
 | `docs/CLI.md` (planned) | CLI usage; `ztest --help` covers it today |
 | [`docs/TEST_FORMAT.md`](./docs/TEST_FORMAT.md) | `.ztest` format |
+| [`docs/INSTALL.md`](./docs/INSTALL.md) | Installing a release or building from source |
 | [`docs/CI.md`](./docs/CI.md) | Running ZTest in CI |
+| [`docs/RELEASING.md`](./docs/RELEASING.md) | Building release archives and publishing a release |
+| [`CHANGELOG.md`](./CHANGELOG.md) | Changes in each release |
 | [`docs/UI_PLATFORM.md`](./docs/UI_PLATFORM.md) | Cross-platform desktop UI evaluation |
 | [`examples/api/`](./examples/api/) | Runnable example suites and an offline echo server |
 

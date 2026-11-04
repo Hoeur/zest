@@ -354,7 +354,8 @@ pub const Controls = struct {
             else
                 null;
             const show = visible and (if (tab) |t| state.request_tab == t else true);
-            if (show == c.shown[i]) continue;
+            // Checks the window too: something outside this file may have shown it.
+            if (show == c.shown[i] and show == (win.IsWindowVisible(handle) != 0)) continue;
             if (!show and win.GetFocus() == handle) _ = win.SetFocus(parent);
             _ = win.ShowWindow(handle, if (show) win.SW_SHOW else win.SW_HIDE);
             c.shown[i] = show;
