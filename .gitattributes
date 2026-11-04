@@ -1,1 +1,4 @@
 *.zig text eol=lf
+/README.md text eol=lf
+/LICENSE text eol=lf
+/CHANGELOG.md text eol=lf

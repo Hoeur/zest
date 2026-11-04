@@ -8,6 +8,10 @@ release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep API request editors hidden after switching tabs or desktop pages.
+
 ## [0.1.0-alpha] - Unreleased
 
 The first preview: the CLI on Windows, Linux and macOS, and the desktop app on
