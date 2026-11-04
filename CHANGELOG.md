@@ -8,11 +8,7 @@ release.
 
 ## [Unreleased]
 
-### Fixed
-
-- Keep API request editors hidden after switching tabs or desktop pages.
-
-## [0.1.0-alpha] - Unreleased
+## [0.1.0-alpha] - 2026-11-04
 
 The first preview: the CLI on Windows, Linux and macOS, and the desktop app on
 Windows.
@@ -38,6 +34,10 @@ Windows.
 - CI examples for GitHub Actions, GitLab CI, Jenkins and Azure DevOps.
 - Release archives for Windows, Linux and macOS on x64 and ARM64, with
   `SHA256SUMS` (`zig build release`).
+
+### Fixed
+
+- Keep API request editors hidden after switching tabs or desktop pages.
 
 ### Security
 
