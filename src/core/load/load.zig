@@ -1,4 +1,4 @@
-//! Load generation: virtual users send one request in a loop for a set time,
+//! Load generation: virtual users repeat a request or suite for a set time,
 //! optionally ramped up and held to a total request rate. Holds no output code,
 //! so the CLI and the desktop app can share it.
 //!
@@ -15,6 +15,9 @@ const evaluate = @import("../assertions/evaluate.zig");
 const http = @import("../http/client.zig");
 const request_model = @import("../http/request.zig");
 const Request = request_model.Request;
+const Response = @import("../http/response.zig").Response;
+const ast = @import("../parser/ast.zig");
+const runner = @import("../runner/runner.zig");
 
 /// Each user is a task, and each request runs on a task of its own so it can
 /// time out, so a run uses about twice this many threads.
@@ -22,10 +25,24 @@ pub const max_users = 1000;
 /// Keeps the per-second series small even for long soak tests.
 pub const max_duration_ms: u64 = 24 * std.time.ms_per_hour;
 
-pub const Config = struct {
+pub const SingleRequest = struct {
     request: Request,
     /// A response fails when any of these fail.
     assertions: []const Assertion = &.{},
+};
+
+pub const Scenario = struct {
+    suite: *const ast.Suite,
+    variables: []const ast.Variable = &.{},
+};
+
+pub const Source = union(enum) {
+    request: SingleRequest,
+    scenario: Scenario,
+};
+
+pub const Config = struct {
+    source: Source,
     users: u32 = 10,
     duration_ms: u64 = 10_000,
     /// Users start evenly spread over this time, from the run's start.
@@ -34,7 +51,7 @@ pub const Config = struct {
     rps: u32 = 0,
 };
 
-pub const ConfigError = error{ NoUsers, TooManyUsers, NoDuration, DurationTooLong, RampUpTooLong };
+pub const ConfigError = error{ NoUsers, TooManyUsers, NoDuration, DurationTooLong, RampUpTooLong, NoRunnableScenarioTests };
 
 pub fn describeConfigError(err: ConfigError) []const u8 {
     return switch (err) {
@@ -43,6 +60,7 @@ pub fn describeConfigError(err: ConfigError) []const u8 {
         error.NoDuration => "--duration must be above zero",
         error.DurationTooLong => "--duration can be at most 24h",
         error.RampUpTooLong => "--ramp-up must be shorter than --duration",
+        error.NoRunnableScenarioTests => "the scenario must have at least one runnable test",
     };
 }
 
@@ -52,6 +70,9 @@ pub fn check(config: Config) ConfigError!void {
     if (config.duration_ms == 0) return error.NoDuration;
     if (config.duration_ms > max_duration_ms) return error.DurationTooLong;
     if (config.ramp_up_ms >= config.duration_ms and config.ramp_up_ms > 0) return error.RampUpTooLong;
+    if (config.source == .scenario and !runner.hasRunnableTest(config.source.scenario.suite)) {
+        return error.NoRunnableScenarioTests;
+    }
 }
 
 /// Why a request did not count as a success.
@@ -156,6 +177,8 @@ pub const Stats = struct {
     requests: u64 = 0,
     succeeded: u64 = 0,
     failed: u64 = 0,
+    /// Scenario cases that failed before reaching the HTTP client.
+    scenario_errors: u64 = 0,
     bytes_sent: u64 = 0,
     bytes_received: u64 = 0,
     /// Completed responses only, by status class: index 1 is 1xx up to 5 for 5xx.
@@ -167,6 +190,7 @@ pub const Stats = struct {
         s.requests += other.requests;
         s.succeeded += other.succeeded;
         s.failed += other.failed;
+        s.scenario_errors += other.scenario_errors;
         s.bytes_sent += other.bytes_sent;
         s.bytes_received += other.bytes_received;
         for (&s.status_classes, other.status_classes) |*a, b| a.* += b;
@@ -189,6 +213,7 @@ pub const Result = struct {
     stats: Stats,
     seconds: []const Second,
     interrupted: bool,
+    worker_failed: bool = false,
 
     pub fn rps(r: Result) f64 {
         if (r.duration_ns == 0) return 0;
@@ -220,14 +245,15 @@ pub const Engine = struct {
     start_ns: i96 = 0,
     deadline_ns: i96 = 0,
     interval_ns: u64 = 0,
-    /// Rate-limit slots handed out so far.
-    issued: Atomic(u64) = .init(0),
+    /// Earliest next request start, in nanoseconds relative to start_ns.
+    next_start_ns: Atomic(u64) = .init(0),
     requests: Atomic(u64) = .init(0),
     failed: Atomic(u64) = .init(0),
     active: Atomic(u32) = .init(0),
     finished: Atomic(u32) = .init(0),
     stopping: Atomic(bool) = .init(false),
     interrupted: Atomic(bool) = .init(false),
+    worker_failed: Atomic(bool) = .init(false),
     /// A coarse, shared latency histogram, so a live view can take the
     /// difference of two snapshots and chart percentiles as the run goes.
     live: [live_buckets]Atomic(u32) = @splat(.init(0)),
@@ -254,7 +280,7 @@ pub const Engine = struct {
         errdefer e.gpa.free(e.futures);
         for (e.users, 0..) |*user, i| user.* = .{ .engine = e, .index = @intCast(i) };
 
-        e.interval_ns = if (config.rps == 0) 0 else std.time.ns_per_s / config.rps;
+        e.interval_ns = if (config.rps == 0) 0 else std.math.divCeil(u64, std.time.ns_per_s, config.rps) catch unreachable;
         e.start_ns = Io.Timestamp.now(e.io, .awake).toNanoseconds();
         e.deadline_ns = e.start_ns + @as(i96, config.duration_ms) * std.time.ns_per_ms;
         for (e.users, e.futures) |*user, *future| {
@@ -268,8 +294,9 @@ pub const Engine = struct {
         }
     }
 
-    /// Ends the run early. Requests in flight finish or time out first.
+    /// Ends the run early and cancels requests in flight.
     pub fn stop(e: *Engine) void {
+        e.interrupted.store(true, .release);
         e.stopping.store(true, .release);
     }
 
@@ -307,6 +334,7 @@ pub const Engine = struct {
             .stats = stats,
             .seconds = e.seconds[0..used],
             .interrupted = e.interrupted.load(.acquire),
+            .worker_failed = e.worker_failed.load(.acquire),
         };
     }
 
@@ -333,12 +361,22 @@ pub const Engine = struct {
         }
     }
 
-    /// The next rate-limit slot's start time, or null when it is past the end.
-    fn nextSlot(e: *Engine) ?i96 {
-        if (e.interval_ns == 0) return e.now();
-        const k = e.issued.fetchAdd(1, .monotonic);
-        const slot = e.start_ns + @as(i96, k) * e.interval_ns;
-        return if (slot >= e.deadline_ns) null else slot;
+    /// All HTTP attempts share one clock. Idle time does not bank future slots.
+    fn requestStart(e: *Engine) ?i96 {
+        while (!e.stopping.load(.acquire)) {
+            const now_ns = e.now();
+            if (now_ns >= e.deadline_ns) return null;
+            if (e.interval_ns == 0) return now_ns;
+            const next = e.next_start_ns.load(.monotonic);
+            const earliest = e.start_ns + next;
+            if (now_ns < earliest) {
+                if (!e.waitUntil(@min(earliest, e.deadline_ns))) return null;
+                continue;
+            }
+            const elapsed: u64 = @intCast(now_ns - e.start_ns);
+            if (e.next_start_ns.cmpxchgWeak(next, elapsed + e.interval_ns, .monotonic, .monotonic) == null) return now_ns;
+        }
+        return null;
     }
 
     fn recordSecond(e: *Engine, at: i96, latency_us: u64, failed: bool) void {
@@ -364,58 +402,111 @@ pub const Engine = struct {
 
         var client: http.Client = .init(e.gpa, e.io);
         defer client.deinit();
+        switch (config.source) {
+            .request => |source| runSingle(user, &client, source),
+            .scenario => |source| runScenario(user, &client, source),
+        }
+    }
+
+    fn runSingle(user: *User, client: *http.Client, source: SingleRequest) void {
+        const e = user.engine;
         var arena_state: std.heap.ArenaAllocator = .init(e.gpa);
         defer arena_state.deinit();
-        const sent_size = requestSize(config.request);
-
-        while (!e.stopping.load(.acquire) and e.now() < e.deadline_ns) {
-            const slot = e.nextSlot() orelse return;
-            if (!e.waitUntil(slot)) return;
-            const started_at = e.now();
-            if (started_at >= e.deadline_ns) return;
+        const sent_size = requestSize(source.request);
+        while (e.requestStart()) |started_at| {
             _ = arena_state.reset(.retain_capacity);
             const arena = arena_state.allocator();
-
-            const stats = &user.stats;
-            const response = client.send(arena, config.request) catch |err| {
+            const response = client.sendCancelable(arena, source.request, &e.stopping) catch |err| {
                 if (err == error.Interrupted) {
-                    e.interrupted.store(true, .release);
                     e.stop();
                     return;
                 }
-                if (e.stopping.load(.acquire)) return;
-                stats.requests += 1;
-                stats.failed += 1;
-                stats.bytes_sent += sent_size;
-                stats.problems.getPtr(Problem.of(err)).* += 1;
-                _ = e.requests.fetchAdd(1, .monotonic);
-                _ = e.failed.fetchAdd(1, .monotonic);
-                e.recordSecond(started_at, 0, true);
+                record(user, started_at, sent_size, null, Problem.of(err));
                 continue;
             };
+            const results = evaluate.evaluate(arena, response, source.assertions, &.{}) catch &.{};
+            const failed = results.len != source.assertions.len or evaluate.countFailed(results) > 0;
+            record(user, started_at, sent_size, response, if (failed) .assertion else null);
+        }
+    }
 
-            const latency_us = response.duration_ns / std.time.ns_per_us;
-            var passed = true;
-            if (config.assertions.len > 0) {
-                const results = evaluate.evaluate(arena, response, config.assertions, &.{}) catch &.{};
-                passed = results.len == config.assertions.len and evaluate.countFailed(results) == 0;
+    fn runScenario(user: *User, client: *http.Client, source: Scenario) void {
+        const e = user.engine;
+        var iteration: std.heap.ArenaAllocator = .init(e.gpa);
+        defer iteration.deinit();
+        var listener: ScenarioListener = .{ .user = user };
+        while (!e.stopping.load(.acquire) and e.now() < e.deadline_ns) {
+            _ = iteration.reset(.free_all);
+            var suite_runner: runner.Runner = .{
+                .gpa = e.gpa,
+                .arena = iteration.allocator(),
+                .client = client,
+                .options = .{ .fail_fast = true },
+                .variables = source.variables,
+                .cancel = &e.stopping,
+            };
+            suite_runner.runSuite(source.suite, &listener) catch {
+                e.worker_failed.store(true, .release);
+                e.stopping.store(true, .release);
+                return;
+            };
+            if (suite_runner.summary.interrupted or user.stats.scenario_errors > 0) return;
+        }
+    }
+
+    const ScenarioListener = struct {
+        user: *User,
+        started_at: i96 = 0,
+
+        pub fn requestStarting(listener: *@This()) bool {
+            listener.started_at = listener.user.engine.requestStart() orelse return false;
+            return true;
+        }
+
+        pub fn caseFinished(listener: *@This(), result: runner.CaseResult) !void {
+            const user = listener.user;
+            switch (result.status) {
+                .not_run => if (result.request != null and !user.engine.stopping.load(.acquire)) user.engine.stop(),
+                .skipped => {},
+                .failed, .passed => {
+                    const request = result.request orelse {
+                        user.stats.scenario_errors += 1;
+                        return;
+                    };
+                    const problem: ?Problem = if (result.http_error) |err| Problem.of(err) else if (result.failure != null)
+                        .other
+                    else if (result.status == .failed)
+                        .assertion
+                    else
+                        null;
+                    record(user, listener.started_at, requestSize(request), result.response, problem);
+                },
             }
-            stats.requests += 1;
-            stats.bytes_sent += sent_size;
-            stats.bytes_received += responseSize(response);
-            stats.status_classes[@min(5, response.status / 100)] += 1;
+        }
+    };
+
+    fn record(user: *User, started_at: i96, sent_size: u64, response: ?Response, problem: ?Problem) void {
+        const e = user.engine;
+        const stats = &user.stats;
+        var latency_us: u64 = 0;
+        stats.requests += 1;
+        stats.bytes_sent += sent_size;
+        if (response) |value| {
+            latency_us = value.duration_ns / std.time.ns_per_us;
+            stats.bytes_received += responseSize(value);
+            stats.status_classes[@min(5, value.status / 100)] += 1;
             stats.latency.record(latency_us);
             _ = e.live[liveBucket(latency_us)].fetchAdd(1, .monotonic);
-            if (passed) {
-                stats.succeeded += 1;
-            } else {
-                stats.failed += 1;
-                stats.problems.getPtr(.assertion).* += 1;
-                _ = e.failed.fetchAdd(1, .monotonic);
-            }
-            _ = e.requests.fetchAdd(1, .monotonic);
-            e.recordSecond(started_at, latency_us, !passed);
         }
+        if (problem) |value| {
+            stats.failed += 1;
+            stats.problems.getPtr(value).* += 1;
+            _ = e.failed.fetchAdd(1, .monotonic);
+        } else {
+            stats.succeeded += 1;
+        }
+        _ = e.requests.fetchAdd(1, .monotonic);
+        e.recordSecond(started_at, latency_us, problem != null);
     }
 };
 
@@ -522,13 +613,13 @@ test "percentiles come from the recorded values" {
 }
 
 test "configurations are checked" {
-    const request: Request = .{ .url = "http://a.test" };
-    try check(.{ .request = request });
-    try testing.expectError(error.NoUsers, check(.{ .request = request, .users = 0 }));
-    try testing.expectError(error.TooManyUsers, check(.{ .request = request, .users = max_users + 1 }));
-    try testing.expectError(error.NoDuration, check(.{ .request = request, .duration_ms = 0 }));
-    try testing.expectError(error.RampUpTooLong, check(.{ .request = request, .duration_ms = 1000, .ramp_up_ms = 1000 }));
-    try testing.expectError(error.DurationTooLong, check(.{ .request = request, .duration_ms = max_duration_ms + 1 }));
+    const source: Source = .{ .request = .{ .request = .{ .url = "http://a.test" } } };
+    try check(.{ .source = source });
+    try testing.expectError(error.NoUsers, check(.{ .source = source, .users = 0 }));
+    try testing.expectError(error.TooManyUsers, check(.{ .source = source, .users = max_users + 1 }));
+    try testing.expectError(error.NoDuration, check(.{ .source = source, .duration_ms = 0 }));
+    try testing.expectError(error.RampUpTooLong, check(.{ .source = source, .duration_ms = 1000, .ramp_up_ms = 1000 }));
+    try testing.expectError(error.DurationTooLong, check(.{ .source = source, .duration_ms = max_duration_ms + 1 }));
 }
 
 test "stats merge every counter" {
@@ -556,4 +647,98 @@ test "live buckets cover every latency and percentiles read them back" {
     try testing.expect(livePercentile(&counts, 50) >= 1000 and livePercentile(&counts, 50) < 1300);
     try testing.expect(livePercentile(&counts, 99) >= 50_000);
     try testing.expectEqual(0, livePercentile(&@as([4]u64, @splat(0)), 50));
+}
+
+test "a paced scenario extracts a value for the next request and records assertions" {
+    const Server = @import("../http/client_test.zig").Server;
+    const io = testing.io;
+    var server = try Server.listen(&.{
+        "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nX-Token: abc\r\n\r\n",
+        "HTTP/1.1 500 Test\r\nContent-Length: 0\r\n\r\n",
+    });
+    defer server.listener.deinit(io);
+
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const base = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}", .{server.port()});
+    var diagnostic: @import("../parser/parser.zig").Diagnostic = .{};
+    const suite = try @import("../parser/parser.zig").parse(arena.allocator(),
+        \\suite "Scenario"
+        \\setup
+        \\GET {{base}}/token
+        \\extract secret token = header.x-token
+        \\end
+        \\test "uses token"
+        \\GET {{base}}/data
+        \\header X-Token {{token}}
+        \\expect status == 200
+        \\end
+    , &diagnostic);
+    var engine: Engine = .{
+        .gpa = testing.allocator,
+        .io = io,
+        .config = .{
+            .source = .{ .scenario = .{ .suite = &suite, .variables = &.{.{ .name = "base", .value = base, .line = 0 }} } },
+            .users = 1,
+            .duration_ms = 900,
+            .rps = 2,
+        },
+    };
+    const result = run: {
+        var task = try io.concurrent(Server.serve, .{&server});
+        defer task.cancel(io) catch {};
+        try engine.start();
+        break :run engine.finish();
+    };
+    defer engine.deinit();
+    try testing.expectEqual(1, server.connections);
+    try testing.expect(std.mem.find(u8, server.received[0..server.received_len], "X-Token: abc\r\n") != null);
+    try testing.expectEqual(2, result.stats.requests);
+    try testing.expectEqual(1, result.stats.succeeded);
+    try testing.expectEqual(1, result.stats.problems.get(.assertion));
+    try testing.expectEqual(0, result.stats.scenario_errors);
+    try testing.expect(!result.interrupted);
+    try testing.expect(result.duration_ns >= 500 * std.time.ns_per_ms);
+}
+
+test "stopping a scenario cancels a pending request and preserves partial metrics" {
+    const Server = @import("../http/client_test.zig").Server;
+    const io = testing.io;
+    var server = try Server.listen(&.{});
+    defer server.listener.deinit(io);
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const url = try std.fmt.allocPrint(arena.allocator(), "http://127.0.0.1:{d}/", .{server.port()});
+    const suite: ast.Suite = .{
+        .name = "Scenario",
+        .variables = &.{},
+        .setup = null,
+        .teardown = null,
+        .tests = &.{.{
+            .name = "pending",
+            .line = 1,
+            .variables = &.{},
+            .request = .{ .method = .GET, .url = url, .headers = &.{}, .body = .none, .line = 1 },
+            .expects = &.{},
+            .extracts = &.{},
+        }},
+    };
+    var engine: Engine = .{
+        .gpa = testing.allocator,
+        .io = io,
+        .config = .{ .source = .{ .scenario = .{ .suite = &suite } }, .users = 1 },
+    };
+    try engine.start();
+    defer engine.deinit();
+    const stream = server.listener.accept(io) catch |err| {
+        engine.stop();
+        _ = engine.finish();
+        return err;
+    };
+    defer stream.close(io);
+    engine.stop();
+    const result = engine.finish();
+    try testing.expect(result.interrupted);
+    try testing.expectEqual(0, result.stats.requests);
+    try testing.expect(result.duration_ns < 5 * std.time.ns_per_s);
 }

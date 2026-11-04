@@ -1,7 +1,7 @@
 # Desktop UI platform evaluation
 
-Status: recommendation, November 2026. Nothing here is implemented yet; the
-Windows Win32/GDI+ app keeps working while this is decided.
+The November 2026 Windows editor comparison favors the system webview prototype.
+Linux and macOS webview acceptance is pending.
 
 ## The question
 
@@ -55,7 +55,7 @@ Notes from each project's own page, checked November 2026:
 - Capy was marked pre-production and had limited macOS support at the time
   of evaluation. [Capy](https://github.com/capy-ui/capy)
 
-## Recommendation
+## Initial recommendation
 
 **Move the desktop app to dvui with its SDL3 backend (option B), after a
 two-day spike that proves the editor.** Keep the Win32 app until the dvui one
@@ -91,7 +91,74 @@ editor wired to `Session` and `Workspace`. Pass if:
 
 If 2 fails, try E for the same slice before falling back to A.
 
-## Migration order after a passing spike
+### Run the prototype
+
+Use Zig 0.17.0 and enable the optional desktop build:
+
+```sh
+zig build ui-dvui -Ddvui=true -Doptimize=ReleaseSafe
+```
+
+The prototype provides a sidebar, method and URL controls, a multiline body
+editor and a response preview. Append `-- path/to/suite.ztest` to load the
+first test in a suite and its workspace configuration. The environment button
+cycles through the configured environments. Sending uses the shared request
+session, including variable resolution, redacted previews and any assertions
+loaded with the test.
+
+The dvui revision and content hash are pinned in `build.zig.zon`. The SDL3
+dependency is built when the prototype is enabled. Use
+`zig build -Ddvui=true -Doptimize=ReleaseSafe` to install the prototype binary.
+
+### dvui results
+
+- The Windows x64 ReleaseSafe build with Zig 0.17.0 is about 7.86 MB. The window
+  opened at 125% scaling and sent a preloaded JSON body of roughly 200 KiB to
+  the loopback echo server. It displayed HTTP 200 and both assertions passed.
+- The Linux x64 ReleaseSafe cross-build is about 7.87 MB and opened under
+  Ubuntu 24.04 on WSLg. The macOS ARM64 build stopped at SDL3 because the Windows
+  host lacks Apple SDK libraries and frameworks. A Mac build and launch remain open.
+- The pinned text entry widget has no undo/redo implementation. The initial
+  large-body deletion test also triggered a panic with layout caching enabled.
+  With caching disabled, deletion, paste, wheel scrolling and sending passed
+  on Windows at an effective 200% scale. Ctrl+Z did not restore the body.
+- The request controls were visible at effective 100%, 150%, and 200%.
+  Tab and Shift+Tab reached all six controls at 200%, where the response
+  preview had little vertical room. The host display itself was at 125%.
+- TinyVG is disabled in the prototype build. Dropdowns show
+  `dropdown_triangle` as text.
+
+For layout checks on one display, set `ZTEST_SPIKE_SCALE` to `100`, `150`,
+or `200` before launch. This changes the prototype's effective layout scale.
+For startup measurements, `ZTEST_SPIKE_TIMING=1` prints a marker after the
+first frame and exits. Windows process-start-to-first-frame samples ranged
+from 194 to 918 ms across the two tested builds. The first observed run took
+455 ms, above the 300 ms target. These samples used the available workstation
+with its normal OS caches.
+
+### System webview results
+
+The Windows x64 ReleaseSafe executable is 1.94 MB and uses the installed
+WebView2 runtime. In the bundled editor, cut, undo, redo, paste and scrolling
+worked with the same roughly 200 KiB JSON body. Tab and Shift+Tab moved between
+the body and its format control. Sending the pasted body returned HTTP 200 and
+both assertions passed through the shared request session.
+
+The Zig build pins the [webview wrapper](https://github.com/webview/webview/tree/782c12ccc3e9358c14a42b41baddbf50bfc28614).
+On Windows, extract the [WebView2 SDK NuGet package](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.1150.38)
+and point the build at its `build/native/include` directory.
+
+```powershell
+zig build ui-webview -Dwebview=true -Doptimize=ReleaseSafe "-Dwebview2-include=C:/path/to/sdk/build/native/include"
+```
+
+Append `-- path/to/suite.ztest` to load the first test. The Linux build uses
+WebKitGTK 4.1 through pkg-config, and macOS uses the WebKit framework. Those
+builds, native DPI checks, and webview startup measurements remain open.
+
+Advance the webview editor to platform validation before choosing a migration.
+
+## dvui migration order if the toolkit is reconsidered
 
 1. Port `Canvas` primitives to dvui drawing, so dashboard and sample screens
    render unchanged.

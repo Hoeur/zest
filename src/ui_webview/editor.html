@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZTest webview prototype</title>
+  <style>
+    :root { color-scheme: dark; font: 15px system-ui, sans-serif; background: #17191d; color: #f2f4f6; }
+    body { margin: 0; display: grid; grid-template-columns: minmax(9rem, 16%) minmax(0, 1fr); min-height: 100vh; }
+    aside, main { padding: 1rem; }
+    aside { background: #202328; }
+    aside p { color: #bcc5d0; }
+    h1 { margin: 0 0 1rem; font-size: 1.4rem; }
+    form { display: grid; gap: .7rem; margin-top: 1rem; }
+    .row { display: flex; gap: .5rem; align-items: center; }
+    button, input, select, textarea, pre {
+      font: inherit; color: inherit; background: #242830; border: 1px solid #596373;
+      border-radius: .35rem; padding: .5rem;
+    }
+    button { cursor: pointer; }
+    #url { flex: 1; min-width: 0; }
+    #send { background: #275590; }
+    :focus-visible { outline: 2px solid #94bfff; outline-offset: 2px; }
+    textarea, pre { font: .9rem ui-monospace, Consolas, monospace; }
+    textarea { box-sizing: border-box; width: 100%; height: 15rem; resize: vertical; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; max-height: 20rem; }
+  </style>
+</head>
+<body>
+  <aside><strong>ZTest</strong><p>API Tests</p><p>Webview prototype</p></aside>
+  <main>
+    <h1 id="title">API request</h1>
+    <button id="environment" type="button">No environments</button>
+    <form id="request">
+      <div class="row">
+        <select id="method" aria-label="HTTP method">
+          <option>GET</option><option>HEAD</option><option>POST</option><option>PUT</option>
+          <option>DELETE</option><option>CONNECT</option><option>OPTIONS</option><option>TRACE</option><option>PATCH</option>
+        </select>
+        <input id="url" aria-label="Request URL" placeholder="Request URL" maxlength="16384">
+        <button id="send" type="submit" disabled>Send</button>
+      </div>
+      <div class="row">
+        <label for="mode">Body format</label>
+        <select id="mode"><option value="none">None</option><option value="raw">Raw</option><option value="json">JSON</option></select>
+      </div>
+      <textarea id="body" aria-label="Request body" wrap="off" spellcheck="false" maxlength="262144"></textarea>
+    </form>
+    <p id="status" role="status">Enter a URL and send a request.</p>
+    <pre id="response" aria-label="Response body" tabindex="0" hidden></pre>
+  </main>
+  <script>
+    const get = (id) => document.getElementById(id);
+    const send = get("send");
+    let busy = false;
+    let pending = false;
+    let timer;
+
+    // Keep drag-and-drop from navigating the native bridge away from this page.
+    window.addEventListener("dragover", (event) => event.preventDefault());
+    window.addEventListener("drop", (event) => event.preventDefault());
+
+    function show(result) {
+      busy = result.busy;
+      send.textContent = busy ? "Cancel" : "Send";
+      const http = result.status ? " · HTTP " + result.status : "";
+      const checks = result.assertions;
+      const counts = checks ? " · " + checks.passed + " passed, " + checks.failed + " failed" : "";
+      get("status").textContent = result.message + http + counts;
+      get("response").textContent = result.response || "";
+      get("response").hidden = !result.response;
+      if (busy) timer = setTimeout(() => update({ action: "poll" }), 60);
+    }
+
+    async function update(message) {
+      clearTimeout(timer);
+      pending = true;
+      try {
+        show(await window.ztest(message));
+      } catch (error) {
+        get("status").textContent = String(error);
+        if (busy) timer = setTimeout(() => update({ action: "poll" }), 60);
+      } finally {
+        pending = false;
+      }
+    }
+
+    get("request").addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (pending) return;
+      update(busy ? { action: "cancel" } : {
+        action: "send",
+        method: get("method").value,
+        url: get("url").value,
+        mode: get("mode").value,
+        body: get("body").value,
+      });
+    });
+
+    get("environment").addEventListener("click", async () => {
+      try {
+        get("environment").textContent = await window.ztest({ action: "cycle_environment" });
+      } catch (error) {
+        get("status").textContent = String(error);
+      }
+    });
+
+    window.ztest({ action: "init" }).then((initial) => {
+      get("title").textContent = initial.title;
+      get("environment").textContent = initial.environment;
+      get("method").value = initial.method;
+      get("url").value = initial.url;
+      get("mode").value = initial.mode;
+      get("body").value = initial.body;
+      send.disabled = false;
+    }).catch((error) => { get("status").textContent = String(error); });
+  </script>
+</body>
+</html>

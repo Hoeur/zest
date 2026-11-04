@@ -1,15 +1,21 @@
-//! `ztest load`: sends one request from many virtual users for a set time and
+//! `ztest load`: runs a request or suite from many virtual users for a set time and
 //! prints throughput, latency percentiles and errors.
 
 const std = @import("std");
 const Io = std.Io;
-const Assertion = @import("../core/assertions/assertion.zig").Assertion;
 const Context = @import("../core/context.zig").Context;
 const ExitCode = @import("../core/errors.zig").ExitCode;
-const Request = @import("../core/http/request.zig").Request;
+const ast = @import("../core/parser/ast.zig");
+const environment = @import("../core/environment.zig");
 const load = @import("../core/load/load.zig");
 const report = @import("../core/report/report.zig");
 const shutdown = @import("../core/shutdown.zig");
+const loadFile = @import("run.zig").loadFile;
+
+pub const Input = union(enum) {
+    request: load.SingleRequest,
+    scenario: []const u8,
+};
 
 pub const Settings = struct {
     users: u32,
@@ -18,17 +24,33 @@ pub const Settings = struct {
     rps: u32,
     reports: []const report.Target = &.{},
     version: []const u8 = "",
+    environment: ?[]const u8 = null,
 };
 
 /// Progress goes to the diagnostics stream once a second, so stdout holds only
 /// the final summary. Every failed response makes the exit code 1.
-pub fn run(context: Context, out: *Io.Writer, request: Request, assertions: []const Assertion, settings: Settings) !ExitCode {
+pub fn run(context: Context, out: *Io.Writer, input: Input, settings: Settings) !ExitCode {
+    var suite: ast.Suite = undefined;
+    const source: load.Source = switch (input) {
+        .request => |request| .{ .request = request },
+        .scenario => |path| scenario: {
+            suite = try loadFile(context, path) orelse return .config_error;
+            var problem: []const u8 = "";
+            const variables = environment.resolve(context.arena, context.config, context.environ, settings.environment, &problem) catch |err| switch (err) {
+                error.OutOfMemory => |e| return e,
+                error.InvalidEnvironment => {
+                    context.log.err("{s}", .{problem});
+                    return .config_error;
+                },
+            };
+            break :scenario .{ .scenario = .{ .suite = &suite, .variables = variables } };
+        },
+    };
     var engine: load.Engine = .{
         .gpa = context.gpa,
         .io = context.io,
         .config = .{
-            .request = request,
-            .assertions = assertions,
+            .source = source,
             .users = settings.users,
             .duration_ms = settings.duration_ms,
             .ramp_up_ms = settings.ramp_up_ms,
@@ -42,7 +64,10 @@ pub fn run(context: Context, out: *Io.Writer, request: Request, assertions: []co
 
     var timestamp: [20]u8 = undefined;
     const started_at = report.formatTimestamp(&timestamp, Io.Timestamp.now(context.io, .real).toSeconds());
-    try out.print("Load test: {s} {s}\n", .{ @tagName(request.method), request.url });
+    switch (input) {
+        .request => |single| try out.print("Load test: {s} {s}\n", .{ @tagName(single.request.method), single.request.url }),
+        .scenario => |path| try out.print("Load scenario: {s}\n", .{path}),
+    }
     try out.print("{d} users for {d}s", .{ settings.users, settings.duration_ms / std.time.ms_per_s });
     if (settings.ramp_up_ms > 0) try out.print(", ramping up over {d}s", .{settings.ramp_up_ms / std.time.ms_per_s});
     if (settings.rps > 0) try out.print(", at most {d} requests/s", .{settings.rps});
@@ -79,7 +104,12 @@ pub fn run(context: Context, out: *Io.Writer, request: Request, assertions: []co
         try out.print("Report: {s}\n", .{target.path});
     }
 
+    if (result.worker_failed) {
+        context.log.err("a scenario worker could not finish", .{});
+        return .internal_error;
+    }
     if (result.interrupted or shutdown.isRequested()) return .interrupted;
+    if (result.stats.scenario_errors > 0) return .test_failure;
     if (result.stats.requests == 0) {
         context.log.err("no requests were sent", .{});
         return .test_failure;
@@ -94,6 +124,7 @@ pub fn printResult(out: *Io.Writer, result: load.Result) Io.Writer.Error!void {
     try row(out, "Total Requests", s.requests);
     try row(out, "Successful", s.succeeded);
     try row(out, "Failed", s.failed);
+    if (s.scenario_errors > 0) try row(out, "Scenario Errors", s.scenario_errors);
     try out.print("{s: <18}{d: >12.1}\n", .{ "RPS", result.rps() });
     try out.print("{s: <18}{d: >11.2}%\n", .{ "Failure Rate", result.failureRate() });
     try out.print("{s: <18}{d: >11.1}s\n\n", .{ "Duration", @as(f64, @floatFromInt(result.duration_ns)) / std.time.ns_per_s });
@@ -179,6 +210,10 @@ pub fn writeJson(out: *Io.Writer, result: load.Result, settings: Settings, start
     try w.write(s.succeeded);
     try w.objectField("failed");
     try w.write(s.failed);
+    if (s.scenario_errors > 0) {
+        try w.objectField("scenario_errors");
+        try w.write(s.scenario_errors);
+    }
     try w.objectField("rps");
     try w.write(result.rps());
     try w.objectField("failure_rate");

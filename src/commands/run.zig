@@ -121,22 +121,26 @@ fn loadFiles(context: Context, paths: []const []const u8) !?[]const File {
 
     const files = try arena.alloc(File, found.items.len);
     for (files, found.items) |*file, path| {
-        const source = cwd.readFileAlloc(context.io, path, arena, max_file_size) catch |err| {
-            if (err == error.OutOfMemory) return err;
-            context.log.err("cannot read {s}: {s}", .{ path, @errorName(err) });
-            return null;
-        };
-        var diagnostic: parser.Diagnostic = .{};
-        const suite = parser.parse(arena, source, &diagnostic) catch |err| switch (err) {
-            error.OutOfMemory => |e| return e,
-            error.SyntaxError => {
-                context.log.err("{s}:{d}: {s}", .{ path, diagnostic.line, diagnostic.message });
-                return null;
-            },
-        };
-        file.* = .{ .path = path, .suite = suite };
+        file.* = .{ .path = path, .suite = try loadFile(context, path) orelse return null };
     }
     return files;
+}
+
+/// Loads one suite and reports file or parser errors. Null means it was reported.
+pub fn loadFile(context: Context, path: []const u8) !?ast.Suite {
+    const source = Io.Dir.cwd().readFileAlloc(context.io, path, context.arena, max_file_size) catch |err| {
+        if (err == error.OutOfMemory) return err;
+        context.log.err("cannot read {s}: {s}", .{ path, @errorName(err) });
+        return null;
+    };
+    var diagnostic: parser.Diagnostic = .{};
+    return parser.parse(context.arena, source, &diagnostic) catch |err| switch (err) {
+        error.OutOfMemory => |e| return e,
+        error.SyntaxError => {
+            context.log.err("{s}:{d}: {s}", .{ path, diagnostic.line, diagnostic.message });
+            return null;
+        },
+    };
 }
 
 /// A named file is used whatever it is called. A directory adds its `.ztest`

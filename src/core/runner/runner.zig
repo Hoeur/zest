@@ -2,6 +2,7 @@
 //! code, so the CLI and the UI can share it.
 //!
 //! A listener is any pointer with `fn caseFinished(self, CaseResult) !void`.
+//! It may also provide `fn requestStarting(self) bool` to pace requests or stop.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -40,6 +41,8 @@ pub const CaseResult = struct {
     /// Parallel to `case.expects`, and empty if the request did not finish.
     assertions: []const evaluate.Result = &.{},
     failure: ?Failure = null,
+    /// The transport error, when the request failed before a response.
+    http_error: ?http.Error = null,
     /// What was sent, with variables replaced, when the request was built.
     request: ?Request = null,
     /// What came back, when the exchange finished.
@@ -134,7 +137,7 @@ pub const Runner = struct {
         };
         const io = r.client.io;
         const start: Io.Timestamp = .now(io, .awake);
-        try run.execute();
+        try run.execute(listener);
         result.request = run.request;
         result.response = run.response;
         result.duration_ns = @intCast(start.untilNow(io, .awake).toNanoseconds());
@@ -195,7 +198,8 @@ pub const Runner = struct {
     }
 };
 
-fn hasRunnableTest(suite: *const ast.Suite) bool {
+/// Whether the suite has any enabled, unskipped test.
+pub fn hasRunnableTest(suite: *const ast.Suite) bool {
     for (suite.tests) |test_case| {
         if (test_case.mode == .run) return true;
     }
@@ -221,11 +225,17 @@ const CaseRun = struct {
     state: *SuiteState,
     result: *CaseResult,
 
-    fn execute(c: *CaseRun) Allocator.Error!void {
+    fn execute(c: *CaseRun, listener: anytype) Allocator.Error!void {
         // Built first, so a mistake in the file sends nothing.
         const request = try c.buildRequest() orelse return;
         const assertions = try c.buildAssertions() orelse return;
 
+        if (@hasDecl(@typeInfo(@TypeOf(listener)).pointer.child, "requestStarting")) {
+            if (!listener.requestStarting()) {
+                c.result.status = .not_run;
+                return;
+            }
+        }
         c.request = request;
         const response = c.client.sendCancelable(c.arena, request, c.cancel) catch |err| switch (err) {
             error.OutOfMemory => |e| return e,
@@ -233,7 +243,10 @@ const CaseRun = struct {
                 c.result.status = .not_run;
                 return;
             },
-            else => return c.fail(c.case.request.line, "{s}", .{http.describe(err)}),
+            else => {
+                c.result.http_error = err;
+                return c.fail(c.case.request.line, "{s}", .{http.describe(err)});
+            },
         };
 
         c.response = response;
