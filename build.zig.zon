@@ -2,6 +2,18 @@
     .name = .zest,
     .version = "0.1.0-alpha",
     .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .dvui = .{
+            .url = "https://codeload.github.com/david-vanderson/dvui/tar.gz/d33935989e166d8340c9dd2888ad8aff0265c4ba",
+            .hash = "dvui-0.6.0-dev-AQFJmROtBAGQY_PnyAZrF1ccsgzQaWPNp0LWI55FM5Nk",
+            .lazy = true,
+        },
+        .webview = .{
+            .url = "https://codeload.github.com/webview/webview/tar.gz/782c12ccc3e9358c14a42b41baddbf50bfc28614",
+            .hash = "N-V-__8AAApvCAAAytQB_cgXXByCvjipBvDqPIqeKoXyZw5c",
+            .lazy = true,
+        },
+    },
     .paths = .{ "build.zig", "build.zig.zon", "src", "examples", "tools", "README.md", "LICENSE", "CHANGELOG.md" },
     .fingerprint = 0x38a0093f204a501b,
 }

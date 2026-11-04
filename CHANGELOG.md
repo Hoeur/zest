@@ -8,6 +8,12 @@ release.
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in dvui/SDL3 request editor prototype for evaluating cross-platform desktop support.
+- Opt-in system webview request editor for testing native text editing.
+- `ztest load --scenario <file.ztest>` runs a suite per virtual user with isolated variables and a shared request-rate limit.
+
 ## [0.1.0-alpha] - 2026-11-04
 
 The first preview: the CLI on Windows, Linux and macOS, and the desktop app on

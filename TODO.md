@@ -21,7 +21,25 @@
 
 - [x] Publish [ZTest 0.1.0-alpha](https://github.com/Hoeur/zest/releases/tag/v0.1.0-alpha) after verifying all six archives
 
-Next is the [cross-platform desktop prototype](docs/UI_PLATFORM.md#the-spike-decide-in-two-days).
+---
+
+## Cross-Platform Desktop Prototype — Phase 9 Follow-up
+
+- [x] Build an opt-in dvui/SDL3 request editor using the shared request session and workspace
+- [x] Verify the Windows x64 build and native request flow with Zig 0.17
+- [x] Build Linux x64 with Zig 0.17 and launch it under WSLg
+- [!] Verify the macOS build and native launch on a Mac with the Apple SDK
+- [x] Evaluate 200 KiB JSON editing in dvui and WebView2. WebView2 passed the Windows editing check. dvui lacks undo and redo
+- [x] Check the Windows and Linux x64 dvui release binary sizes against the 10 MB target
+- [-] Check keyboard traversal and scaling. Windows layout checks at effective 100%, 150%, and 200% passed, with all six controls reachable in both directions at 200%. Native DPI checks remain open
+- [x] Sample dvui time to first frame on Windows. The first launch exceeded 300 ms
+- [x] Advance the system webview candidate to platform validation before a desktop port
+- [ ] Validate the webview editor on Linux and macOS and measure its startup
+
+See the [desktop platform evaluation](docs/UI_PLATFORM.md#the-spike-decide-in-two-days).
+CLI suite-based load scenarios are implemented in Phase 14. The next core gap
+is form-urlencoded and multipart request support in the suite format and
+desktop editor (Phase 10).
 
 ---
 
@@ -39,9 +57,7 @@ Next is the [cross-platform desktop prototype](docs/UI_PLATFORM.md#the-spike-dec
 - [x] Fuzz the parser, writer, assertions, drafts, config and templates; add an engine-wide request-size limit
 - [x] Evaluate cross-platform desktop UI (`docs/UI_PLATFORM.md`)
 
-Next: run the dvui spike from `docs/UI_PLATFORM.md`. Release packaging is done (above).
-Smaller gaps: form-urlencoded and multipart bodies (core supports them, the format
-and desktop do not), proxy support, and scenario load tests from a `.ztest` suite.
+Proxy support remains open in Phase 2.
 
 ---
 
@@ -584,7 +600,7 @@ adding, deleting, duplicating and reordering. Results show failures first.
 - [x] Connection reuse (one client per user)
 - [x] Graceful cancellation (Ctrl-C prints partial results)
 - [x] Rate limiter
-- [ ] Scenario runner (one request today; a `.ztest` suite per user is next)
+- [x] Scenario runner (`ztest load --scenario` repeats a suite with isolated variables per user and iteration)
 
 ### Reliability
 
@@ -750,7 +766,7 @@ ZTest V1 must provide:
 - [x] reusable test suites
 - [x] variables
 - [x] environments
-- [-] load testing (CLI and desktop done; scenarios pending)
+- [x] load testing (CLI and desktop runs, plus CLI suite scenarios)
 - [x] metrics
 - [x] reports
 - [x] CI integration

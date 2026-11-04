@@ -1,12 +1,6 @@
 const std = @import("std");
 
-const package: struct {
-    name: @EnumLiteral(),
-    version: []const u8,
-    minimum_zig_version: []const u8,
-    paths: []const []const u8,
-    fingerprint: u64,
-} = @import("build.zig.zon");
+const package = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -50,6 +44,86 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(tool_tests).step);
 
     addRelease(b);
+    if (b.option(bool, "dvui", "Enable the experimental dvui/SDL3 desktop prototype") orelse false) {
+        addDvui(b, target, optimize);
+    }
+    if (b.option(bool, "webview", "Enable the experimental system webview desktop prototype") orelse false) {
+        addWebview(b, target, optimize);
+    }
+}
+
+fn addWebview(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    const step = b.step("ui-webview", "Run the system webview desktop prototype");
+    const sdk = b.option([]const u8, "webview2-include", "Directory containing the WebView2 SDK header");
+    if (target.result.os.tag == .windows and sdk == null) {
+        const fail = b.addFail("Supply -Dwebview2-include=<WebView2 SDK>/build/native/include");
+        step.dependOn(&fail.step);
+        b.getInstallStep().dependOn(&fail.step);
+        return;
+    }
+    const dependency = b.lazyDependency("webview", .{}) orelse return;
+    const root = b.createModule(.{
+        .root_source_file = b.path("src/desktop_webview.zig"),
+        .target = target,
+        .optimize = optimize,
+        .strip = optimize != .debug,
+        .link_libcpp = true,
+    });
+    root.addIncludePath(dependency.path("core/include"));
+    root.addCSourceFile(.{
+        .file = dependency.path("core/src/webview.cc"),
+        .flags = &.{ "-std=c++17", "-DWEBVIEW_STATIC" },
+    });
+    switch (target.result.os.tag) {
+        .windows => {
+            root.addSystemIncludePath(.{ .cwd_relative = sdk.? });
+            if (target.result.abi == .gnu) root.addSystemIncludePath(dependency.path("compatibility/mingw/include"));
+            for ([_][]const u8{ "advapi32", "ole32", "shell32", "shlwapi", "user32", "version" }) |lib| {
+                root.linkSystemLibrary(lib, .{});
+            }
+        },
+        .linux => root.linkSystemLibrary("webkit2gtk-4.1", .{ .use_pkg_config = .force }),
+        .macos => root.linkFramework("WebKit", .{}),
+        else => {
+            step.dependOn(&b.addFail("The webview prototype requires Windows, Linux, or macOS").step);
+            return;
+        },
+    }
+    const exe = b.addExecutable(.{ .name = "ztest-ui-webview", .root_module = root });
+    b.installArtifact(exe);
+    const run = b.addRunArtifact(exe);
+    run.addPassthruArgs();
+    step.dependOn(&run.step);
+}
+
+fn addDvui(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    const run_step = b.step("ui-dvui", "Run the dvui desktop prototype");
+    const dependency = b.lazyDependency("dvui", .{
+        .target = target,
+        .optimize = optimize,
+        .backend = .sdl3,
+        .freetype = false,
+        .@"tiny-file-dialogs" = false,
+        .@"tree-sitter" = false,
+        .tvg = false,
+    }) orelse return;
+    const exe = b.addExecutable(.{
+        .name = "ztest-ui-dvui",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/desktop_dvui.zig"),
+            .target = target,
+            .optimize = optimize,
+            .strip = optimize != .debug,
+            .imports = &.{
+                .{ .name = "dvui", .module = dependency.module("dvui_sdl3") },
+                .{ .name = "sdl3", .module = dependency.module("sdl3") },
+            },
+        }),
+    });
+    b.installArtifact(exe);
+    const run = b.addRunArtifact(exe);
+    run.addPassthruArgs();
+    run_step.dependOn(&run.step);
 }
 
 /// Every platform `zig build release` packages. Linux builds use musl, so the
