@@ -1,0 +1,138 @@
+name: Release
+
+# Pushing a tag such as v0.1.0-alpha builds every archive, runs each one on
+# its own platform, and publishes a GitHub release. Running the workflow by
+# hand does everything except publishing, as a dry run.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build archives
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - name: Read the version
+        id: version
+        shell: bash
+        run: |
+          version=$(sed -n 's/^ *\.version = "\(.*\)",$/\1/p' build.zig.zon)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in build.zig.zon"
+            exit 1
+          fi
+      - name: Release notes
+        shell: bash
+        run: |
+          mkdir -p zig-out
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            zig run tools/package.zig -- notes CHANGELOG.md "${{ steps.version.outputs.version }}" zig-out/notes.md
+          else
+            echo "Dry run from $GITHUB_SHA; nothing is published." > zig-out/notes.md
+          fi
+      - name: Check formatting
+        run: zig fmt --check build.zig src examples tools
+      - name: Tests
+        run: zig build test --summary all
+      - name: Build the release archives
+        # The last commit's time makes the archives reproducible.
+        run: zig build release -Dsource-date-epoch=$(git log -1 --format=%ct) --summary all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            zig-out/release/
+            zig-out/notes.md
+          if-no-files-found: error
+
+  verify:
+    name: Verify (${{ matrix.target }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: x86_64-windows, ext: zip }
+          - { os: windows-11-arm, target: aarch64-windows, ext: zip }
+          - { os: ubuntu-latest, target: x86_64-linux, ext: tar.gz }
+          - { os: ubuntu-24.04-arm, target: aarch64-linux, ext: tar.gz }
+          - { os: macos-15-intel, target: x86_64-macos, ext: tar.gz }
+          - { os: macos-latest, target: aarch64-macos, ext: tar.gz }
+    runs-on: ${{ matrix.os }}
+    env:
+      NAME: ztest-${{ needs.build.outputs.version }}-${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check the checksum
+        shell: bash
+        working-directory: dist/release
+        run: |
+          grep " $NAME.${{ matrix.ext }}\$" SHA256SUMS > mine.sha256
+          if command -v sha256sum >/dev/null; then sha256sum -c mine.sha256; else shasum -a 256 -c mine.sha256; fi
+      - name: Extract (zip)
+        if: matrix.ext == 'zip'
+        shell: pwsh
+        run: Expand-Archive "dist/release/$env:NAME.zip" -DestinationPath unpacked
+      - name: Extract (tar.gz)
+        if: matrix.ext == 'tar.gz'
+        run: mkdir unpacked && tar -xzf "dist/release/$NAME.tar.gz" -C unpacked
+      - name: Run the example suites with the released binary
+        shell: bash
+        working-directory: examples/api
+        env:
+          ZTEST_EXAMPLE_KEY: demo-key
+        run: |
+          ztest="../../unpacked/$NAME/ztest"
+          "$ztest" --version | tee version.txt
+          grep -qx "ztest ${{ needs.build.outputs.version }}" version.txt
+          python echo_server.py 8080 &
+          for i in $(seq 1 20); do curl -fs http://127.0.0.1:8080/get >/dev/null && break; sleep 0.5; done
+          "$ztest" run tests/ --env ci
+          "$ztest" load http://127.0.0.1:8080/get --users 2 --duration 2s --assert "status == 200"
+      - name: Desktop app is present
+        if: matrix.ext == 'zip'
+        shell: bash
+        run: test -s "unpacked/$NAME/ztest-ui.exe"
+
+  publish:
+    name: Publish
+    needs: [build, verify]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          prerelease=""
+          [[ "$VERSION" == *-* ]] && prerelease="--prerelease"
+          gh release create "$GITHUB_REF_NAME" dist/release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "ZTest $VERSION" \
+            --notes-file dist/notes.md \
+            $prerelease
