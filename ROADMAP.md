@@ -2,7 +2,7 @@
 
 ## Vision
 
-ZTest is a fast, lightweight testing platform built with Zig.
+ZTest is a lightweight platform for API testing, automated suites, and load testing.
 
 The long-term goal is to provide:
 
@@ -29,13 +29,12 @@ One Core Engine
 
 ### Goal
 
-Create a clean and maintainable Zig project.
+Establish the project structure, build setup, and test infrastructure.
 
 ### Deliverables
 
-- Zig project initialized
-- `build.zig`
-- `build.zig.zon`
+- Project initialized
+- Build and package configuration
 - module structure
 - application versioning
 - configuration loader
@@ -46,13 +45,7 @@ Create a clean and maintainable Zig project.
 
 ### Definition of Done
 
-```bash
-zig build
-zig build test
-zig build run
-```
-
-all work successfully.
+The project builds, the tests pass, and the CLI runs.
 
 Target version:
 
@@ -318,17 +311,9 @@ API_KEY = ********
 
 Build the native desktop application.
 
-Current stack (Windows only):
-
-```text
-Zig
-+
-Win32
-+
-GDI+
-```
-
-zgui and Dear ImGui were the original plan, but zgui has not been verified on Zig 0.17. Linux and macOS still need a UI approach.
+The Windows desktop app uses Win32 and GDI+. A prototype will evaluate
+a shared desktop interface for Windows, Linux, and macOS. See the
+[desktop platform evaluation](docs/UI_PLATFORM.md).
 
 ### Screens
 
@@ -437,7 +422,7 @@ v0.5.0
 
 ### Goal
 
-Build high-performance load generation using Zig.
+Build a load engine that generates concurrent HTTP requests and measures response performance.
 
 ### Features
 
@@ -658,7 +643,7 @@ ztest.exe
 ztest
 ```
 
-Users should not need Zig installed.
+Users can run the distributed executables directly.
 
 ---
 

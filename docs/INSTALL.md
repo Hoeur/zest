@@ -20,13 +20,14 @@ archive has the command-line tool.
 
 ## Check the download
 
-`SHA256SUMS` on the release page lists every archive's checksum.
+Compare the SHA-256 digest of your downloaded archive with its entry in
+`SHA256SUMS` on the release page.
 
 ```bash
 # Linux
-sha256sum -c SHA256SUMS --ignore-missing
+sha256sum ztest-0.1.0-alpha-x86_64-linux.tar.gz
 # macOS
-shasum -a 256 -c SHA256SUMS --ignore-missing
+shasum -a 256 ztest-0.1.0-alpha-aarch64-macos.tar.gz
 ```
 
 ```powershell
@@ -66,10 +67,14 @@ Downloads made with `curl` are not quarantined.
 3. To use `ztest` from any terminal, add the folder to your `PATH`:
 
    ```powershell
-   [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Tools\ztest", "User")
+   $folder = 'C:\Tools\ztest\ztest-0.1.0-alpha-x86_64-windows'
+   $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+   $newPath = (@($userPath, $folder) | Where-Object { $_ }) -join ';'
+   [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
    ```
 
-   Open a new terminal and run `ztest --version`.
+   Set `$folder` to the directory containing `ztest.exe`. Open a new terminal
+   and run `ztest --version`.
 
 Windows SmartScreen may warn about an unrecognised app the first time,
 because the executables are not code-signed yet. Choose **More info** and
@@ -77,31 +82,18 @@ because the executables are not code-signed yet. Choose **More info** and
 
 ## In CI
 
-Download and extract the archive in a job step instead of building ZTest. For
-GitHub Actions on Linux:
+Download and extract the ZTest archive in a job step. For GitHub Actions on
+Linux:
 
 ```yaml
 - name: Install ZTest
   run: |
-    curl -fsSL "https://github.com/Hoeur/zest/releases/download/v0.1.0-alpha/ztest-0.1.0-alpha-x86_64-linux.tar.gz" | tar -xz
+    curl -fsSLO "https://github.com/Hoeur/zest/releases/download/v0.1.0-alpha/ztest-0.1.0-alpha-x86_64-linux.tar.gz"
+    tar -xzf ztest-0.1.0-alpha-x86_64-linux.tar.gz
     echo "$PWD/ztest-0.1.0-alpha-x86_64-linux" >> "$GITHUB_PATH"
 ```
 
 [`CI.md`](./CI.md) shows the rest of the job for each CI system.
-
-## Build from source
-
-With [Zig 0.17.0](https://ziglang.org/download/) or newer:
-
-```bash
-git clone https://github.com/Hoeur/zest.git
-cd zest
-zig build -Doptimize=ReleaseSafe
-zig-out/bin/ztest --version
-```
-
-`zig build release` cross-compiles every archive above, with `SHA256SUMS`,
-into `zig-out/release/` from any one machine. See [`RELEASING.md`](./RELEASING.md).
 
 ## Uninstall
 

@@ -1,9 +1,8 @@
 # Architecture
 
-This folder holds **zest**, a Zig unit-test library, and the early **ZTest** CLI
-and desktop UI. The HTTP engine, assertions, `.ztest` parser and writer, reports,
-the load engine, and `ztest api`, `run`, `load` and `init` work, including
-environments and secrets. The desktop's API Tests page is functional on Windows.
+ZTest shares its HTTP engine, assertions, suite runner, load engine, and
+reporting across the CLI and Windows desktop app. The workspace configuration
+provides environments and secret values for both entry points.
 
 ## Layout
 

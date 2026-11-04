@@ -1,9 +1,9 @@
 # Running ZTest in CI
 
 `ztest` is one executable with stable exit codes, so any CI system can run it.
-Download a release archive ([`INSTALL.md`](./INSTALL.md#in-ci)) or build it
-with Zig 0.17 (`zig build -Doptimize=ReleaseSafe`), then run your suites and
-keep the reports.
+Install a published ZTest release, run your suites, and keep the reports.
+The Linux examples below use a pinned x64 archive. For other runners, see
+the [platform downloads](INSTALL.md).
 
 ## What the CI step needs
 
@@ -45,14 +45,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0
-      - name: Build ZTest
+      - name: Install ZTest
+        env:
+          ZTEST_VERSION: 0.1.0-alpha
         run: |
-          git clone --depth 1 https://github.com/Hoeur/zest.git "$RUNNER_TEMP/zest"
-          (cd "$RUNNER_TEMP/zest" && zig build -Doptimize=ReleaseSafe)
-          echo "$RUNNER_TEMP/zest/zig-out/bin" >> "$GITHUB_PATH"
+          cd "$RUNNER_TEMP"
+          archive="ztest-$ZTEST_VERSION-x86_64-linux.tar.gz"
+          curl -fsSLO "https://github.com/Hoeur/zest/releases/download/v$ZTEST_VERSION/$archive"
+          tar -xzf "$archive"
+          echo "$PWD/${archive%.tar.gz}" >> "$GITHUB_PATH"
       - name: Run suites
         env:
           STAGING_API_KEY: ${{ secrets.STAGING_API_KEY }}
@@ -72,14 +73,14 @@ GitLab shows JUnit results on the merge request when the report is declared.
 api-tests:
   image: alpine:3.20
   variables:
-    ZIG_VERSION: "0.17.0"
+    ZTEST_VERSION: "0.1.0-alpha"
   before_script:
-    - apk add --no-cache git curl xz
-    - curl -sSfL "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" | tar -xJ -C /opt
-    - export PATH="/opt/zig-x86_64-linux-${ZIG_VERSION}:$PATH"
-    - git clone --depth 1 https://github.com/Hoeur/zest.git /opt/zest
-    - (cd /opt/zest && zig build -Doptimize=ReleaseSafe)
-    - export PATH="/opt/zest/zig-out/bin:$PATH"
+    - apk add --no-cache curl
+    - |
+      archive="ztest-$ZTEST_VERSION-x86_64-linux.tar.gz"
+      curl -fsSLO "https://github.com/Hoeur/zest/releases/download/v$ZTEST_VERSION/$archive"
+      tar -xzf "$archive"
+      export PATH="$PWD/${archive%.tar.gz}:$PATH"
   script:
     # STAGING_API_KEY comes from Settings > CI/CD > Variables, marked masked.
     - ztest run tests/ --env staging --report junit=reports/junit.xml --report html=reports/report.html
@@ -116,8 +117,7 @@ pipeline {
 }
 ```
 
-The agent needs `ztest` on its `PATH`, built once as above or installed from a
-release archive.
+[Install ZTest](INSTALL.md) on the Jenkins agent and put `ztest` on its `PATH`.
 
 ## Azure DevOps
 
@@ -128,11 +128,15 @@ pool:
 
 steps:
   - script: |
-      curl -sSfL https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz | tar -xJ -C $(Agent.TempDirectory)
-      git clone --depth 1 https://github.com/Hoeur/zest.git $(Agent.TempDirectory)/zest
-      cd $(Agent.TempDirectory)/zest && $(Agent.TempDirectory)/zig-x86_64-linux-0.17.0/zig build -Doptimize=ReleaseSafe
-      echo "##vso[task.prependpath]$(Agent.TempDirectory)/zest/zig-out/bin"
-    displayName: Build ZTest
+      set -eu
+      cd "$(Agent.TempDirectory)"
+      archive="ztest-$ZTEST_VERSION-x86_64-linux.tar.gz"
+      curl -fsSLO "https://github.com/Hoeur/zest/releases/download/v$ZTEST_VERSION/$archive"
+      tar -xzf "$archive"
+      echo "##vso[task.prependpath]$PWD/${archive%.tar.gz}"
+    displayName: Install ZTest
+    env:
+      ZTEST_VERSION: 0.1.0-alpha
   - script: ztest run tests/ --env staging --report junit=reports/junit.xml --report html=reports/report.html
     displayName: Run API suites
     env:
@@ -149,10 +153,6 @@ steps:
 
 ## Notes
 
-- The download URLs above follow the layout of Zig's release archives; check
-  [ziglang.org/download](https://ziglang.org/download/) for the exact file name
-  of your Zig version and platform.
-- Once ZTest publishes release archives, replace the build steps with a
-  download, as Zig is then not needed on the agent.
+- When updating the pinned version, check the [release downloads](https://github.com/Hoeur/zest/releases) for the matching platform archive and checksum.
 - `examples/api/` has suites and an offline echo server; this repository's CI
   runs them, which is a working end-to-end example.

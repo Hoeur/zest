@@ -33,10 +33,8 @@ Deliberate differences:
 - Native menus, file dialogs and edit scroll bars follow Windows; the app asks for
   dark menus and scroll bars on Windows 10 1809 and later.
 
-Not verifiable under Wine: Zig 0.17's networking fails there before connecting,
-so sending, suites that send requests and load tests were covered by
-`zig build test` on Linux instead (runner cancellation, the desktop suite run, the
-desktop load run and history).
+The Wine test environment failed to connect. Automated tests on Linux covered
+request execution, suite and load runs, runner cancellation, and history.
 
 ---
 
@@ -86,7 +84,9 @@ Verified in the final executable against a local HTTP server:
 - The styled Cancel button cancels a delayed request, restores Send, and re-enables editors.
 - The default and maximized window sizes keep the primary controls usable.
 
-`zig build` passed. `zig build test` passed, including request snapshot/cancellation/validation, response previews, and small-window layout checks. Formatting checks and Git whitespace checks passed for the changed files.
+The build and test suite passed, including request snapshots, cancellation,
+validation, response previews, and small-window layout checks. Formatting
+and whitespace checks passed for the changed files.
 
 The staged UI-only source was also exported to
 `zig-out/ui-commit-verification/`, without the separate local API/formatting

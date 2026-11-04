@@ -1,13 +1,12 @@
 # Releasing ZTest
 
-Releases are built by `zig build release` and published by
-`.github/workflows/release.yml` when a `v*` tag is pushed.
+The [Release workflow](../.github/workflows/release.yml) builds and publishes
+ZTest when a version tag is pushed.
 
-## What `zig build release` makes
+## Release assets
 
-From any one machine with Zig 0.17, it cross-compiles the release targets with
-`ReleaseSafe` (safety checks kept, debug info stripped) and writes, into
-`zig-out/release/`:
+The workflow builds six archives with runtime safety checks enabled and debug
+information stripped.
 
 - `ztest-<version>-<arch>-<os>.zip` for Windows, with `ztest.exe` and
   `ztest-ui.exe`;
@@ -20,11 +19,8 @@ one `ztest-<version>-<arch>-<os>/` folder. The version comes from
 `build.zig.zon`. When the build machine matches a target, that build is run
 once with `--version` as a check.
 
-Archives are written by `tools/package.zig` with the standard library only,
-so packaging needs no `zip` or `tar` on the machine. Every file gets the time
-from `-Dsource-date-epoch=<unix seconds>`, or 1980-01-01 without it, so the
-same sources give the same archives; the workflow passes the last commit's
-time.
+The packager uses the commit timestamp for every file. Given identical
+inputs and timestamps, it produces byte-for-byte identical archives.
 
 ## Cutting a release
 

@@ -13,14 +13,15 @@
 
 ## Release Packaging — 2026-11-04
 
-- [x] `zig build release`: every platform cross-compiled from one machine, packaged as `.zip`/`.tar.gz` with `SHA256SUMS` (`tools/package.zig`, standard library only, reproducible)
+- [x] Build reproducible archives for all six release targets with `SHA256SUMS`
 - [x] Release workflow (`.github/workflows/release.yml`): tag check, dated changelog check, tests, archives, a run of each archive on its own platform, GitHub release
 - [x] CI cross-compiles every release target on each push
 - [x] `CHANGELOG.md`, `docs/INSTALL.md`, `docs/RELEASING.md`
 - [x] Fix the desktop app's build for Windows ARM64 (function-pointer alignment in `native.zig`)
 
-Next: date the `0.1.0-alpha` changelog section and push the `v0.1.0-alpha` tag
-to run the first release, then the dvui spike from `docs/UI_PLATFORM.md`.
+- [x] Publish [ZTest 0.1.0-alpha](https://github.com/Hoeur/zest/releases/tag/v0.1.0-alpha) after verifying all six archives
+
+Next is the [cross-platform desktop prototype](docs/UI_PLATFORM.md#the-spike-decide-in-two-days).
 
 ---
 
@@ -58,9 +59,9 @@ upgrade card and the account avatar are left out: ZTest has neither.
 - [x] Reports, Environments and Settings pages; environment menu, notifications and Ctrl+K search in the top bar
 - [x] Cancel a running suite between and during requests (`Runner.cancel`)
 
-Under Wine, Zig 0.17's networking fails before connecting, so live sends, suite runs
-that send requests and load tests were verified with `zig build test` on Linux; the
-pages themselves were checked under Wine against the mockups.
+Network requests failed before connecting in the Wine test environment.
+Automated tests on Linux covered requests, suites, and load tests. Visual
+checks under Wine compared the desktop pages with the mockups.
 
 ---
 
@@ -69,7 +70,7 @@ pages themselves were checked under Wine against the mockups.
 - [x] Reject oversized CLI and core HTTP timeouts without panicking
 - [x] Add native keyboard-focusable request/response tabs and body modes
 - [x] Keep Tab/Shift+Tab navigation outside hidden and disabled editors
-- [x] Normalize source formatting with Zig 0.17
+- [x] Normalize source formatting
 - [x] Complete native request interaction verification after the keyboard changes
 - [x] Compare the mockup and implementation; preserve visual QA evidence in `design-qa.md`
 - [x] Connect desktop auth and environment variables to the shared core
@@ -81,15 +82,15 @@ pages themselves were checked under Wine against the mockups.
 ## Phase 0 — Repository Setup
 
 - [x] Create repository
-- [x] Initialize Zig project
+- [x] Initialize project
 - [x] Add `.gitignore`
 - [x] Add `README.md`
 - [x] Add `LICENSE`
 - [x] Add `ROADMAP.md`
 - [x] Add `ARCHITECTURE.md`
 - [x] Add `TODO.md`
-- [x] Configure `build.zig`
-- [x] Configure `build.zig.zon`
+- [x] Configure the build
+- [x] Configure package metadata
 - [x] Define app version
 - [x] Add debug build
 - [x] Add release build
@@ -716,19 +717,19 @@ adding, deleting, duplicating and reordering. Results show failures first.
 
 ## Phase 21 — Packaging
 
-All six are built by `zig build release`; the release workflow runs each on
-its own platform before publishing. Only Linux x64 has been run so far.
+The release workflow built and ran the packaged CLI on all six target
+platforms before publishing the first alpha.
 
 - [x] Windows x64 (CLI and desktop app)
 - [x] Windows ARM64 (CLI and desktop app)
 - [x] Linux x64 (static, musl)
 - [x] Linux ARM64 (static, musl)
 - [x] macOS Intel
-- [x] macOS Apple Silicon (ad-hoc signed by the Zig linker)
+- [x] macOS Apple Silicon (ad hoc signature)
 
 ### Release
 
-- [-] version tag (the workflow publishes on `v*` tags; `v0.1.0-alpha` not pushed yet)
+- [x] Release tag `v0.1.0-alpha`
 - [x] changelog (`CHANGELOG.md`; the workflow uses the tag's section as release notes)
 - [x] release archive
 - [x] checksums (`SHA256SUMS`)
@@ -753,4 +754,4 @@ ZTest V1 must provide:
 - [x] metrics
 - [x] reports
 - [x] CI integration
-- [-] cross-platform releases (archives for all six targets; desktop app on Windows only; first tag pending)
+- [-] cross-platform releases (alpha archives published for all six targets; desktop app on Windows)

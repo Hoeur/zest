@@ -26,14 +26,13 @@ Windows.
 - `ztest load` with virtual users, ramp-up, a rate limit, assertions on every
   response, and RPS, failures and p50/p90/p95/p99 latency.
 - `ztest init` writes a starter `ztest.json` and `tests/example.ztest`.
-- The `zest` unit-test library for Zig.
 - Windows desktop app (`ztest-ui.exe`): API Tests request builder with
   Params, Headers, Auth, Body and live assertions; Test Suites with live
   results and report export; Load Tests with live charts; Dashboard and
   Reports from run history; Environments and Settings.
 - CI examples for GitHub Actions, GitLab CI, Jenkins and Azure DevOps.
 - Release archives for Windows, Linux and macOS on x64 and ARM64, with
-  `SHA256SUMS` (`zig build release`).
+  `SHA256SUMS` for verifying downloads.
 
 ### Fixed
 
